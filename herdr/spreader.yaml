@@ -1,0 +1,125 @@
+# herdr-spreader workspace config
+# Install: cargo install herdr-spreader
+# Run: herdr-spreader --config ~/.config/herdr/spreader.yaml
+
+workspaces:
+  - name: swm.cc
+    root: ~/Code/swm.cc
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: whatisonthe.tv
+    root: ~/Code/whatisonthe.tv
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: Search for a Property
+    root: ~/Code/searchforaproperty
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: Funerals NI
+    root: ~/Code/funeralsni
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: Second Breakfast
+    root: ~/Code/second_breakfast
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: The Only Stephen
+    root: ~/Code/theonlystephen.com
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: BMK
+    root: ~/Code/bmk
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: Jotter
+    root: ~/Code/jotter
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: The McCulloughs
+    root: ~/Code/the-mcculloughs.org
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: Agentic
+    root: ~/Code/agentic
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
+
+  - name: Catch
+    root: ~/Code/catch
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian

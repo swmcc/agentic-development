@@ -1,0 +1,28 @@
+[keys]
+prefix = "ctrl+a"
+
+[ui.toast]
+delivery = "herdr"
+
+[ui]
+show_agent_labels_on_pane_borders = false
+
+[[keys.command]]
+key = "prefix+g"
+type = "popup"
+command = "lazygit"
+description = "run lazygit"
+width = "80%"
+height = "80%"
+
+# [[keys.command]]
+# key = "prefix+t"
+# type = "popup"
+# command = "exec \"${SHELL:-sh}\""
+# description = "open scratch terminal"
+# width = "80%"
+# height = "80%"
+
+[theme]
+name = "gruvbox"
+auto_switch = false
