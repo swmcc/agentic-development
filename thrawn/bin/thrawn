@@ -325,10 +325,11 @@ def stream_cmd(argv, cwd, log: Path, label: str, timeout: int = 1800,
     start = time.monotonic()
     last_note = 0.0
     with log.open("wb") as fh:
-        proc = subprocess.Popen(
-            argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-        )
         if echo:
+            # PIPE is safe here: we continuously drain it to log + terminal
+            proc = subprocess.Popen(
+                argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            )
             for chunk in iter(proc.stdout.readline, b""):
                 fh.write(chunk)
                 fh.flush()
@@ -341,6 +342,12 @@ def stream_cmd(argv, cwd, log: Path, label: str, timeout: int = 1800,
                     return False
             proc.wait()
         else:
+            # quiet mode writes STRAIGHT to the log file — never a pipe.
+            # An undrained pipe fills at ~64KB and deadlocks the child
+            # (a chatty rspec run hits that easily); the growing file is
+            # also what the activity ticker reads.
+            proc = subprocess.Popen(argv, cwd=cwd, stdout=fh,
+                                    stderr=subprocess.STDOUT)
             while True:
                 try:
                     proc.wait(timeout=2)
@@ -361,10 +368,6 @@ def stream_cmd(argv, cwd, log: Path, label: str, timeout: int = 1800,
                     info(f"… {label} {fmt_dur(elapsed)}" + (f" — {act}" if act else ""))
                     last_note = elapsed
             live_done()
-            # drain anything the pipe still holds into the log
-            rest = proc.stdout.read()
-            if rest:
-                fh.write(rest)
     return proc.returncode == 0
 
 
@@ -1619,15 +1622,29 @@ def cmd_adopt(repo: Path, cfg: dict, run_ref, task_ids) -> None:
     watch(repo, cfg, state)
 
 
+# A run that has executed work always outranks a mere plan — resuming a stale
+# duplicate plan re-spawns every agent from scratch. Created-time only breaks ties.
+PHASE_RANK = {"planned": 0, "failed": 1, "working": 2, "integrating": 3, "green": 4}
+
+
 def find_open_run(repo: Path, intake: dict):
-    """Most recent unfinished run for the same ticket/brief, if any."""
+    """Most advanced unfinished run for the same ticket/brief, if any."""
     matches = [
         s for s in list_runs(repo)
         if s.get("target", {}).get("kind") == intake["kind"]
         and str(s.get("target", {}).get("ref")) == str(intake["ref"])
         and s.get("phase") not in ("shipped", "aborted", "planning")
     ]
-    return sorted(matches, key=lambda s: s.get("created", ""))[-1] if matches else None
+    if not matches:
+        return None
+    matches.sort(key=lambda s: (PHASE_RANK.get(s.get("phase"), 0), s.get("created", "")))
+    best = matches[-1]
+    if len(matches) > 1:
+        tidy = "; ".join(f"`thrawn abort {s['run_id']}`" for s in matches[:-1])
+        info(f"{YELLOW}note: {len(matches)} open runs for this target — resuming "
+             f"the most advanced, {best['run_id']}; scrap the stragglers: "
+             f"{tidy}{RESET}")
+    return best
 
 
 def continue_run(repo: Path, cfg: dict, prev: dict) -> None:

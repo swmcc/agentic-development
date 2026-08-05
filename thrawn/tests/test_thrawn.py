@@ -346,6 +346,38 @@ class TestRunReuse:
                    created="2026-02-01T00:00:00")
         assert T.find_open_run(tmp_path, INTAKE)["run_id"] == "r2"
 
+    def test_advanced_run_beats_newer_stale_plan(self, T, tmp_path):
+        # a run mid-integration must win over a later abandoned duplicate plan —
+        # resuming the plan would re-spawn every agent from scratch
+        seed_state(T, tmp_path, run_id="r1", phase="integrating",
+                   created="2026-01-01T00:00:00")
+        seed_state(T, tmp_path, run_id="r2", phase="planned",
+                   created="2026-02-01T00:00:00")
+        assert T.find_open_run(tmp_path, INTAKE)["run_id"] == "r1"
+
+    def test_working_run_beats_failed_and_planned(self, T, tmp_path):
+        seed_state(T, tmp_path, run_id="r1", phase="planned",
+                   created="2026-03-01T00:00:00")
+        seed_state(T, tmp_path, run_id="r2", phase="failed",
+                   created="2026-02-01T00:00:00")
+        seed_state(T, tmp_path, run_id="r3", phase="working",
+                   created="2026-01-01T00:00:00")
+        assert T.find_open_run(tmp_path, INTAKE)["run_id"] == "r3"
+
+    def test_duplicate_open_runs_warn_and_suggest_abort(self, T, tmp_path, capsys):
+        seed_state(T, tmp_path, run_id="r1", phase="integrating")
+        seed_state(T, tmp_path, run_id="r2", phase="planned")
+        best = T.find_open_run(tmp_path, INTAKE)
+        assert best["run_id"] == "r1"
+        out = capsys.readouterr().out
+        assert "2 open runs" in out
+        assert "thrawn abort r2" in out
+
+    def test_single_open_run_does_not_warn(self, T, tmp_path, capsys):
+        seed_state(T, tmp_path, run_id="r1", phase="working")
+        T.find_open_run(tmp_path, INTAKE)
+        assert "open runs" not in capsys.readouterr().out
+
     def test_green_run_points_at_ship_code(self, T, tmp_path):
         prev = seed_state(T, tmp_path, phase="green")
         with pytest.raises(SystemExit):
