@@ -36,6 +36,11 @@ The planner and every worker will now start every run already knowing the
 stack, layout, conventions, and test commands. Re-run it occasionally —
 thrawn tells you when it's gone stale (default: 50 commits behind).
 
+(You can skip this step entirely: if a repo has no recon cache, dispatch
+runs it for you first. So `thrawn 42` on a fresh repo is genuinely
+steps 0–4 in one command — everything except `ship`, which is *always*
+manual.)
+
 ## Step 1 — see the plan before committing to it
 
 You *can* just run `thrawn 42` and let it fly. First few times, look at the

@@ -79,10 +79,12 @@ Every later `thrawn <ticket>` injects that brief into the planner *and* every
 worker agent, so they start oriented instead of exploring from scratch:
 faster plans, fewer tokens.
 
-Staleness is measured in commits: within `recon_max_age_commits` (default
-50) the brief is trusted for orientation; beyond it thrawn nags you to
-re-run `thrawn recon` and tells the models to verify anything load-bearing.
-The cache is per-machine (it lives in `.thrawn/`, which is git-excluded).
+You rarely need to run it by hand: dispatch auto-runs recon when a repo has
+no cache yet (`auto_recon = true`). Staleness is measured in commits: within
+`recon_max_age_commits` (default 50) the brief is trusted for orientation;
+beyond it thrawn nags you to re-run `thrawn recon` and tells the models to
+verify anything load-bearing. The cache is per-machine (it lives in
+`.thrawn/`, which is git-excluded).
 
 ```toml
 # .thrawn.toml — optional per-repo tuning

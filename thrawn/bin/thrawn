@@ -152,6 +152,7 @@ def load_config(repo: Path) -> dict:
             "poll_seconds": 2,
             "recon_runner": "",  # empty = use the planner runner
             "recon_max_age_commits": 50,
+            "auto_recon": True,  # dispatch runs recon first when no cache exists
         },
         "checks": {"commands": []},
         "runners": {},
@@ -997,6 +998,9 @@ def cmd_abort(repo: Path, run_id) -> None:
 
 def dispatch(repo: Path, cfg: dict, target, plan_only: bool) -> None:
     ensure_git_exclude(repo)
+    if cfg["thrawn"]["auto_recon"] and not recon_paths(repo)[0].exists():
+        info("no recon cache for this repo — surveying first (step 0)")
+        cmd_recon(repo, cfg)
     dirty = try_run(["git", "status", "--porcelain"], cwd=repo)
     if dirty and dirty.stdout.strip():
         info(f"{YELLOW}note: uncommitted changes in this repo will NOT be visible "
