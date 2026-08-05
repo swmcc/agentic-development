@@ -9,6 +9,10 @@ You have READ-ONLY access to this repository. Explore it (Glob, Grep, Read)
 until you understand the codebase well enough to decompose the work below.
 Do NOT edit anything.
 
+# Cached repo brief
+
+{{recon}}
+
 # The work
 
 Run id: {{run_id}}

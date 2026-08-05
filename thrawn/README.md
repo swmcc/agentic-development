@@ -53,6 +53,7 @@ thrawn 123                       # dispatch from issue #123 (gh/glab auto-detect
 thrawn briefs/dark-mode.md       # dispatch from a markdown brief
 thrawn                           # dispatch from ./THRAWN.md
 thrawn plan 123                  # plan only — review plan.json before executing
+thrawn recon                     # cache a codebase brief (faster/cheaper planning)
 thrawn watch gh-123              # execute a planned run / resume watching
 thrawn status                    # the board (shows ship code when green)
 thrawn ship gh-123 --code 482913 # push + open PR/MR
@@ -63,6 +64,29 @@ thrawn abort gh-123              # kill agents, delete worktrees + branches
 
 Ctrl-C during a run is safe — agents keep working in their panes; resume the
 orchestrator with `thrawn watch`.
+
+## Recon — the context cache
+
+Without a cache, every dispatch pays for the planner re-exploring your repo.
+`thrawn recon` surveys the codebase once (read-only) and saves a dense brief
+— purpose, stack, layout, key modules, conventions, test commands, gotchas —
+to `.thrawn/recon.md`, pinned to the current commit.
+
+Every later `thrawn <ticket>` injects that brief into the planner *and* every
+worker agent, so they start oriented instead of exploring from scratch:
+faster plans, fewer tokens.
+
+Staleness is measured in commits: within `recon_max_age_commits` (default
+50) the brief is trusted for orientation; beyond it thrawn nags you to
+re-run `thrawn recon` and tells the models to verify anything load-bearing.
+The cache is per-machine (it lives in `.thrawn/`, which is git-excluded).
+
+```toml
+# .thrawn.toml — optional per-repo tuning
+[thrawn]
+recon_runner = "haiku"        # cheap surveys for a simple repo
+recon_max_age_commits = 20    # stricter staleness on a fast-moving repo
+```
 
 ## Ticket sources
 

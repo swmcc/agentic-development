@@ -150,6 +150,8 @@ def load_config(repo: Path) -> dict:
             "max_tasks": 6,
             "integrator_attempts": 2,
             "poll_seconds": 2,
+            "recon_runner": "",  # empty = use the planner runner
+            "recon_max_age_commits": 50,
         },
         "checks": {"commands": []},
         "runners": {},
@@ -334,6 +336,79 @@ def make_run_id(repo: Path, intake: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Recon — cached per-repo codebase brief
+# ---------------------------------------------------------------------------
+
+def recon_paths(repo: Path):
+    return state_dir(repo) / "recon.md", state_dir(repo) / "recon.json"
+
+
+def recon_age_commits(repo: Path, meta: dict):
+    """Commits on HEAD since the recon was taken; None if unknowable."""
+    commit = meta.get("commit")
+    if not commit:
+        return None
+    proc = try_run(["git", "rev-list", "--count", f"{commit}..HEAD"], cwd=repo)
+    if proc and proc.returncode == 0:
+        try:
+            return int(proc.stdout.strip())
+        except ValueError:
+            return None
+    return None  # commit unknown to this history (rebase/gc) — treat as stale
+
+
+def load_recon(repo: Path, cfg: dict) -> str:
+    """Return the recon brief for prompt injection, or a no-cache marker."""
+    md_path, meta_path = recon_paths(repo)
+    if not md_path.exists():
+        return "(no cached brief — explore the repo yourself)"
+    try:
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
+    except json.JSONDecodeError:
+        meta = {}
+    age = recon_age_commits(repo, meta)
+    max_age = cfg["thrawn"]["recon_max_age_commits"]
+    if age is None or age > max_age:
+        info(f"{YELLOW}recon cache is stale "
+             f"({'unknown age' if age is None else f'{age} commits old'}) — "
+             f"refresh with `thrawn recon`{RESET}")
+        staleness = (
+            "NOTE: this brief is STALE — verify anything load-bearing "
+            "against the actual code."
+        )
+    else:
+        staleness = (
+            f"This brief is {age} commit(s) old — trust it for orientation, "
+            "verify specifics you depend on."
+        )
+    return f"{staleness}\n\n{md_path.read_text()}"
+
+
+def cmd_recon(repo: Path, cfg: dict) -> None:
+    ensure_git_exclude(repo)
+    tc = cfg["thrawn"]
+    runner = tc["recon_runner"] or tc["planner"]
+    argv = runner_argv(cfg, runner, load_prompt("recon.md"))
+    if argv is None:
+        die(f"recon runner `{runner}` not defined in runners.toml")
+    info(f"surveying the terrain with {BOLD}{runner}{RESET} …")
+    proc = try_run(argv, cwd=repo, timeout=1800)
+    if proc is None or proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()[-2000:] if proc else "not found"
+        die(f"recon failed:\n{detail}")
+    md_path, meta_path = recon_paths(repo)
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.write_text(proc.stdout.strip() + "\n")
+    commit = run(["git", "rev-parse", "HEAD"], cwd=repo).stdout.strip()
+    meta_path.write_text(json.dumps(
+        {"commit": commit, "created": now_iso(), "runner": runner}, indent=2
+    ))
+    lines = len(proc.stdout.strip().splitlines())
+    info(f"{GREEN}recon saved{RESET} → .thrawn/recon.md "
+         f"({lines} lines, pinned to {commit[:8]})")
+
+
+# ---------------------------------------------------------------------------
 # Planning — deep think with the planner model
 # ---------------------------------------------------------------------------
 
@@ -404,6 +479,7 @@ def run_planner(repo: Path, cfg: dict, intake: dict, run_id: str) -> dict:
         ticket=intake["text"],
         runners=runner_notes,
         max_tasks=str(tc["max_tasks"]),
+        recon=load_recon(repo, cfg),
     )
     argv = runner_argv(cfg, tc["planner"], prompt)
     if argv is None:
@@ -556,6 +632,7 @@ def spawn_task(repo, cfg, state, plan, task, spawner):
             f"- {t['id']}: {t['title']}" for t in plan["tasks"] if t["id"] != tid
         )
         or "(none)",
+        recon=load_recon(repo, cfg),
     )
     argv = runner_argv(cfg, task["runner"], prompt)
     if argv is None:
@@ -966,6 +1043,7 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
   thrawn <brief.md>            dispatch from a markdown brief
   thrawn                       dispatch from ./THRAWN.md
   thrawn plan <target>         plan only (review before executing)
+  thrawn recon                 cache a codebase brief (faster/cheaper planning)
   thrawn watch [run]           resume/execute a run
   thrawn status [run]          show the board (and ship code when green)
   thrawn ship <run> --code N   push + open PR/MR (requires green + code)
@@ -985,7 +1063,9 @@ def main() -> None:
     cfg = load_config(repo)
     sub = args[0] if args else None
 
-    if sub == "plan":
+    if sub == "recon":
+        cmd_recon(repo, cfg)
+    elif sub == "plan":
         dispatch(repo, cfg, args[1] if len(args) > 1 else None, plan_only=True)
     elif sub == "watch":
         state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)

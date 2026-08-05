@@ -11,6 +11,10 @@ Overall goal: {{summary}}
 Sibling tasks (context only — do NOT do their work):
 {{siblings}}
 
+# Repo brief (cached orientation — verify specifics you depend on)
+
+{{recon}}
+
 # Your task: {{task_title}}
 
 {{task_prompt}}

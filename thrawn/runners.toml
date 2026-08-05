@@ -12,6 +12,8 @@ allowed_runners = ["opus", "haiku", "codex", "local", "pi"]
 max_tasks = 6
 integrator_attempts = 2
 poll_seconds = 2
+recon_runner = ""             # empty = use the planner runner
+recon_max_age_commits = 50    # staleness threshold for the cached repo brief
 
 [checks]
 # Ran in the integration worktree after merging. Empty = auto-detect from
