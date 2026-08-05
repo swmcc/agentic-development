@@ -240,7 +240,7 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 | New repo | `thrawn recon` |
 | Cautious dispatch | `thrawn plan 42` → review → `thrawn watch gh-42` |
 | Confident dispatch | `thrawn 42` |
-| Re-run `thrawn 42` | resumes the open run — never re-plans (`--new` forces fresh) |
+| Re-run `thrawn 42` | resumes the most advanced open run — never re-plans (`--new` forces fresh) |
 | See a saved plan | `thrawn plan gh-42 --full` |
 | Where are things? | `thrawn status` / `thrawn runs` |
 | What did it do? | `thrawn diff gh-42 [t2]` — incl. uncommitted worktree work |

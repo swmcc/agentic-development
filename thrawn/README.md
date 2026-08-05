@@ -56,7 +56,8 @@ end-to-end, from `thrawn recon` to the PR, including the failure paths.
 
 ```bash
 thrawn 123                       # dispatch from issue #123 (gh/glab auto-detected)
-thrawn 123 --new                 # force a fresh plan (re-dispatch resumes the open run)
+thrawn 123 --new                 # force a fresh plan (re-dispatch resumes the most
+                                 # advanced open run and warns about duplicates)
 thrawn briefs/dark-mode.md       # dispatch from a markdown brief
 thrawn                           # dispatch from ./THRAWN.md
 thrawn plan 123                  # plan only — review plan.json before executing
@@ -144,7 +145,7 @@ The planner routes each task by complexity. Defaults in
 | `fable-plan` | `claude --model claude-fable-5 --permission-mode plan` | planning only (read-only) |
 | `opus` | `claude --model opus` | high-complexity, architectural |
 | `haiku` | `claude --model haiku` | mechanical, well-specified |
-| `codex` | `codex exec --full-auto` | focused codegen |
+| `codex` | `codex exec --full-auto --dangerously-bypass-approvals-and-sandbox` | focused codegen |
 | `pi` | `pi` | alternative executor |
 | `local` | `ollama run qwen2.5-coder` | trivial isolated snippets |
 
@@ -156,9 +157,10 @@ Config precedence (later wins):
 
 ## The ship gate
 
-Worker agents run with `--dangerously-skip-permissions` — safe because each
-is jailed in its own worktree on its own branch; worst case is
-`thrawn abort`. The trade-off is a hard gate at the other end: **nothing is
+Worker agents run unsandboxed (`--dangerously-skip-permissions` for claude,
+`--dangerously-bypass-approvals-and-sandbox` for codex, whose sandbox can't
+even take the git index lock in a worktree) — safe because each is jailed
+in its own worktree on its own branch; worst case is `thrawn abort`. The trade-off is a hard gate at the other end: **nothing is
 ever pushed automatically.** When integration goes green, thrawn generates a
 one-time 6-digit code shown only on the status board. Shipping requires
 typing it back:
