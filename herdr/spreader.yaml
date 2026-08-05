@@ -123,3 +123,14 @@ workspaces:
       - label: Neovim
       - label: System
       - label: Obsidian
+
+  - name: Thoughts
+    root: ~/Code/thoughts
+    tabs:
+      - label: Agentic
+        panes:
+          - command: claude
+      - label: Git
+      - label: Neovim
+      - label: System
+      - label: Obsidian
