@@ -1,0 +1,47 @@
+# thrawn runner routing
+#
+# Precedence (later wins): this file -> ~/.config/thrawn/runners.toml -> <repo>/.thrawn.toml
+# Each runner is an argv template; "{prompt}" is replaced with the full prompt.
+# `notes` are shown to the planner so it can route tasks sensibly.
+
+[thrawn]
+planner = "fable-plan"        # deep-think model (read-only exploration)
+integrator = "opus"           # merges conflicts, fixes failing checks
+default_runner = "opus"       # fallback when the planner picks something odd
+allowed_runners = ["opus", "haiku", "codex", "local", "pi"]
+max_tasks = 6
+integrator_attempts = 2
+poll_seconds = 2
+
+[checks]
+# Ran in the integration worktree after merging. Empty = auto-detect from
+# Makefile (check -> lint+test). Override per-repo in <repo>/.thrawn.toml.
+commands = []
+
+# --- planner (read-only, never edits) --------------------------------------
+
+[runners.fable-plan]
+argv = ["claude", "--model", "claude-fable-5", "--permission-mode", "plan", "-p", "{prompt}"]
+notes = "internal — planning only"
+
+# --- workers ---------------------------------------------------------------
+
+[runners.opus]
+argv = ["claude", "--model", "opus", "-p", "{prompt}", "--dangerously-skip-permissions"]
+notes = "strongest executor; architectural work, tricky refactors, anything touching many files or requiring judgement"
+
+[runners.haiku]
+argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-permissions"]
+notes = "fast + cheap; mechanical edits, templates, config changes, docs, small well-specified functions"
+
+[runners.codex]
+argv = ["codex", "exec", "--full-auto", "{prompt}"]
+notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-described scope"
+
+[runners.pi]
+argv = ["pi", "{prompt}"]
+notes = "pi agent; general-purpose alternative executor"
+
+[runners.local]
+argv = ["ollama", "run", "qwen2.5-coder", "{prompt}"]
+notes = "local model, offline/cheap; ONLY for trivial isolated snippets — it cannot browse the repo or run commands"

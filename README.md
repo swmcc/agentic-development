@@ -25,6 +25,7 @@ make status
 | Path | Purpose |
 |------|---------|
 | `herdr/` | [Herdr](https://herdr.io) terminal multiplexer configuration |
+| `thrawn/` | ⚔ Parallel agent orchestrator — plan with fable, execute with opus/haiku/codex/local in worktrees |
 | `Makefile` | Installation and setup automation |
 
 ## What's Herdr?
@@ -51,6 +52,19 @@ Herdr is a modern terminal multiplexer with first-class support for AI coding ag
 
 Run `make help` for the full list.
 
+## Thrawn
+
+Give it a ticket, get a PR:
+
+```bash
+thrawn 123                       # plan (fable) → parallel agents in worktrees → merge → green
+thrawn status                    # the board, with ship code when green
+thrawn ship gh-123 --code 482913 # push + PR/MR (gated behind the code)
+```
+
+See [thrawn/README.md](thrawn/README.md).
+
 ## See Also
 
 - [herdr/README.md](herdr/README.md) - Detailed herdr configuration docs
+- [thrawn/README.md](thrawn/README.md) - Parallel agent orchestrator

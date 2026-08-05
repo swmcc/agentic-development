@@ -1,0 +1,127 @@
+# ⚔ thrawn
+
+*Plan deeply, execute in parallel.*
+
+Give thrawn a ticket or a markdown brief. It:
+
+1. **Deep-thinks** a plan with a strong model (fable) that explores your repo read-only
+2. **Splits** the work into parallel tasks, each routed to the right agent/model for its complexity
+3. **Spawns** one agent per task in an isolated git worktree — visible as herdr panes
+4. **Merges** the task branches, resolves conflicts with an integrator agent, runs your checks
+5. **Gates** shipping behind a one-time code — nothing is pushed until you've seen the green board
+6. **Ships**: pushes the branch and opens the PR (gh) or MR (glab)
+
+```
+thrawn 123
+        │
+        ▼
+   ┌─ deep think (fable, read-only) ──→ plan.json
+   │
+   ▼
+   ┌──────────┬──────────┬──────────┐        herdr panes,
+   │ t1 opus  │ t2 haiku │ t3 codex │  ←──   parallel, isolated
+   │ worktree │ worktree │ worktree │        worktrees
+   └────┬─────┴────┬─────┴────┬─────┘
+        └──────────┼──────────┘
+                   ▼
+        merge → integrator agent → checks
+                   ▼
+            ALL GREEN  code: 482913
+                   ▼
+        thrawn ship gh-123 --code 482913
+                   ▼
+              push + PR/MR
+```
+
+## Install
+
+From the repo root:
+
+```bash
+make setup-thrawn     # symlinks bin/thrawn into ~/.local/bin
+```
+
+Requires: `python3` ≥ 3.11, `git`, `claude` CLI. Optional: `herdr` (panes),
+`gh`/`glab` (tickets + PRs), `codex`, `pi`, `ollama` (extra runners).
+
+## Usage
+
+```bash
+thrawn 123                       # dispatch from issue #123 (gh/glab auto-detected)
+thrawn briefs/dark-mode.md       # dispatch from a markdown brief
+thrawn                           # dispatch from ./THRAWN.md
+thrawn plan 123                  # plan only — review plan.json before executing
+thrawn watch gh-123              # execute a planned run / resume watching
+thrawn status                    # the board (shows ship code when green)
+thrawn ship gh-123 --code 482913 # push + open PR/MR
+thrawn integrate gh-123          # retry merge/checks after a failure
+thrawn runs                      # list runs in this repo
+thrawn abort gh-123              # kill agents, delete worktrees + branches
+```
+
+Ctrl-C during a run is safe — agents keep working in their panes; resume the
+orchestrator with `thrawn watch`.
+
+## Briefs
+
+Instead of a ticket, drop a `THRAWN.md` in the repo root (or pass any `.md`
+path). Template in [templates/THRAWN.md](templates/THRAWN.md) — goal,
+context, constraints, routing hints, out-of-scope.
+
+## Runner routing
+
+The planner routes each task by complexity. Defaults in
+[runners.toml](runners.toml):
+
+| Runner | Command | Used for |
+|--------|---------|----------|
+| `fable-plan` | `claude --model claude-fable-5 --permission-mode plan` | planning only (read-only) |
+| `opus` | `claude --model opus` | high-complexity, architectural |
+| `haiku` | `claude --model haiku` | mechanical, well-specified |
+| `codex` | `codex exec --full-auto` | focused codegen |
+| `pi` | `pi` | alternative executor |
+| `local` | `ollama run qwen2.5-coder` | trivial isolated snippets |
+
+Config precedence (later wins):
+
+1. `thrawn/runners.toml` (defaults, this repo)
+2. `~/.config/thrawn/runners.toml` (your machine)
+3. `<repo>/.thrawn.toml` (per-project — e.g. override `[checks] commands`)
+
+## The ship gate
+
+Worker agents run with `--dangerously-skip-permissions` — safe because each
+is jailed in its own worktree on its own branch; worst case is
+`thrawn abort`. The trade-off is a hard gate at the other end: **nothing is
+ever pushed automatically.** When integration goes green, thrawn generates a
+one-time 6-digit code shown only on the status board. Shipping requires
+typing it back:
+
+```bash
+thrawn ship gh-123 --code 482913
+```
+
+Seeing the green board *is* the second factor.
+
+## State
+
+Everything lives in `<repo>/.thrawn/` (auto-added to `.git/info/exclude`):
+
+```
+.thrawn/
+├── runs/<run-id>/
+│   ├── plan.json           # the battle plan
+│   ├── state.json          # phases, task statuses, ship code
+│   ├── planner-raw.txt     # raw planner output
+│   ├── task-t1.log         # per-task agent output
+│   └── task-t1.exit        # per-task exit codes
+└── worktrees/<run-id>/
+    ├── t1/ t2/ …           # task worktrees
+    └── _integration/       # merge target
+```
+
+## Without herdr
+
+thrawn prefers herdr (`tab create` + `agent start` per task) but falls back
+to detached background processes when herdr isn't running — same behaviour,
+just no live panes. Force fallback with `THRAWN_NO_HERDR=1`.

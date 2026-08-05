@@ -1,0 +1,1021 @@
+#!/usr/bin/env python3
+"""thrawn — plan deeply, execute in parallel.
+
+Give it a ticket (GitHub/GitLab) or a markdown brief. It deep-thinks a plan
+with a strong model, splits the work into tasks, spawns one agent per task
+in an isolated git worktree (visible as herdr panes), merges the results,
+runs your checks, and gates the push behind a one-time code.
+
+Stdlib only. Python >= 3.11 (tomllib).
+"""
+
+import argparse
+import json
+import os
+import re
+import secrets
+import shlex
+import shutil
+import subprocess
+import sys
+import time
+import tomllib
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Terminal colours
+# ---------------------------------------------------------------------------
+
+def _c(code: str) -> str:
+    return code if sys.stdout.isatty() else ""
+
+GREEN = _c("\x1b[32m")
+YELLOW = _c("\x1b[33m")
+RED = _c("\x1b[31m")
+BLUE = _c("\x1b[34m")
+DIM = _c("\x1b[2m")
+BOLD = _c("\x1b[1m")
+RESET = _c("\x1b[0m")
+
+STATUS_ICON = {
+    "pending": f"{DIM}○{RESET}",
+    "running": f"{YELLOW}◐{RESET}",
+    "done": f"{GREEN}●{RESET}",
+    "failed": f"{RED}✖{RESET}",
+}
+
+
+def info(msg: str) -> None:
+    print(f"{BLUE}thrawn{RESET} {msg}")
+
+
+def die(msg: str, code: int = 1) -> None:
+    print(f"{RED}thrawn: {msg}{RESET}", file=sys.stderr)
+    sys.exit(code)
+
+
+# ---------------------------------------------------------------------------
+# Subprocess helpers
+# ---------------------------------------------------------------------------
+
+def run(argv, cwd=None, check=True, input_text=None, timeout=None):
+    """Run a command, capture output. Returns CompletedProcess."""
+    try:
+        return subprocess.run(
+            argv,
+            cwd=cwd,
+            check=check,
+            input=input_text,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.CalledProcessError as exc:
+        if check:
+            die(
+                f"command failed: {' '.join(map(str, argv))}\n"
+                f"{(exc.stderr or exc.stdout or '').strip()[-2000:]}"
+            )
+        raise
+
+
+def try_run(argv, cwd=None, timeout=None):
+    """Run without raising; returns CompletedProcess or None on OSError."""
+    try:
+        return subprocess.run(
+            argv, cwd=cwd, capture_output=True, text=True, timeout=timeout
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def have(cmd: str) -> bool:
+    return shutil.which(cmd) is not None
+
+
+# ---------------------------------------------------------------------------
+# Paths & config
+# ---------------------------------------------------------------------------
+
+def install_root() -> Path:
+    """Directory containing runners.toml/prompts/, resolved through symlinks."""
+    return Path(__file__).resolve().parent.parent
+
+
+def repo_root() -> Path:
+    proc = try_run(["git", "rev-parse", "--show-toplevel"])
+    if not proc or proc.returncode != 0:
+        die("not inside a git repository")
+    return Path(proc.stdout.strip())
+
+
+def state_dir(repo: Path) -> Path:
+    return repo / ".thrawn"
+
+
+def ensure_git_exclude(repo: Path) -> None:
+    """Keep .thrawn/ out of git without touching tracked .gitignore."""
+    exclude = repo / ".git" / "info" / "exclude"
+    try:
+        existing = exclude.read_text() if exclude.exists() else ""
+        if ".thrawn/" not in existing:
+            exclude.parent.mkdir(parents=True, exist_ok=True)
+            with exclude.open("a") as fh:
+                if existing and not existing.endswith("\n"):
+                    fh.write("\n")
+                fh.write(".thrawn/\n")
+    except OSError:
+        pass
+
+
+def _merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for key, val in over.items():
+        if isinstance(val, dict) and isinstance(out.get(key), dict):
+            out[key] = _merge(out[key], val)
+        else:
+            out[key] = val
+    return out
+
+
+def load_config(repo: Path) -> dict:
+    """defaults <- install runners.toml <- ~/.config/thrawn/runners.toml <- repo/.thrawn.toml"""
+    cfg: dict = {
+        "thrawn": {
+            "planner": "fable-plan",
+            "integrator": "opus",
+            "default_runner": "opus",
+            "allowed_runners": ["opus", "haiku", "codex", "local", "pi"],
+            "max_tasks": 6,
+            "integrator_attempts": 2,
+            "poll_seconds": 2,
+        },
+        "checks": {"commands": []},
+        "runners": {},
+    }
+    paths = [
+        install_root() / "runners.toml",
+        Path.home() / ".config" / "thrawn" / "runners.toml",
+        repo / ".thrawn.toml",
+    ]
+    for path in paths:
+        if path.exists():
+            try:
+                cfg = _merge(cfg, tomllib.loads(path.read_text()))
+            except tomllib.TOMLDecodeError as exc:
+                die(f"bad TOML in {path}: {exc}")
+    return cfg
+
+
+def runner_argv(cfg: dict, name: str, prompt: str):
+    runner = cfg["runners"].get(name)
+    if not runner or "argv" not in runner:
+        return None
+    return [prompt if a == "{prompt}" else a for a in runner["argv"]]
+
+
+def load_prompt(name: str) -> str:
+    path = install_root() / "prompts" / name
+    if not path.exists():
+        die(f"missing prompt file: {path}")
+    return path.read_text()
+
+
+def render(template: str, **kw: str) -> str:
+    for key, val in kw.items():
+        template = template.replace("{{" + key + "}}", val)
+    return template
+
+
+# ---------------------------------------------------------------------------
+# Run state
+# ---------------------------------------------------------------------------
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def run_dir(repo: Path, run_id: str) -> Path:
+    return state_dir(repo) / "runs" / run_id
+
+
+def load_state(repo: Path, run_id: str) -> dict:
+    path = run_dir(repo, run_id) / "state.json"
+    if not path.exists():
+        die(f"no such run: {run_id} (see `thrawn runs`)")
+    return json.loads(path.read_text())
+
+
+def save_state(repo: Path, state: dict) -> None:
+    path = run_dir(repo, state["run_id"]) / "state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2))
+
+
+def list_runs(repo: Path):
+    base = state_dir(repo) / "runs"
+    if not base.exists():
+        return []
+    runs = []
+    for entry in sorted(base.iterdir()):
+        sf = entry / "state.json"
+        if sf.exists():
+            try:
+                runs.append(json.loads(sf.read_text()))
+            except json.JSONDecodeError:
+                continue
+    return runs
+
+
+def latest_run(repo: Path):
+    runs = list_runs(repo)
+    if not runs:
+        die("no runs yet — start one with `thrawn <issue#|brief.md>`")
+    return sorted(runs, key=lambda s: s.get("created", ""))[-1]
+
+
+def unique_run_id(repo: Path, base_id: str) -> str:
+    rid, n = base_id, 2
+    while run_dir(repo, rid).exists():
+        rid = f"{base_id}-{n}"
+        n += 1
+    return rid
+
+
+# ---------------------------------------------------------------------------
+# Intake — gh / glab / markdown brief
+# ---------------------------------------------------------------------------
+
+def detect_host(repo: Path):
+    proc = try_run(["git", "remote", "get-url", "origin"], cwd=repo)
+    url = proc.stdout.strip() if proc and proc.returncode == 0 else ""
+    if "github" in url:
+        return "github", url
+    if "gitlab" in url:
+        return "gitlab", url
+    return None, url
+
+
+def fetch_issue(repo: Path, number: str):
+    host, _ = detect_host(repo)
+    if host == "github":
+        if not have("gh"):
+            die("gh CLI not installed")
+        proc = run(
+            ["gh", "issue", "view", number, "--json", "number,title,body,labels"],
+            cwd=repo,
+        )
+        data = json.loads(proc.stdout)
+        labels = ", ".join(lab["name"] for lab in data.get("labels", []))
+        body = data.get("body") or "(no description)"
+        text = f"# {data['title']}\n\nLabels: {labels or 'none'}\n\n{body}"
+        return {"kind": "github", "ref": number, "title": data["title"], "text": text}
+    if host == "gitlab":
+        if not have("glab"):
+            die("glab CLI not installed")
+        proc = try_run(["glab", "issue", "view", number, "--output", "json"], cwd=repo)
+        if proc and proc.returncode == 0:
+            try:
+                data = json.loads(proc.stdout)
+                title = data.get("title", f"issue {number}")
+                body = data.get("description") or "(no description)"
+                return {
+                    "kind": "gitlab",
+                    "ref": number,
+                    "title": title,
+                    "text": f"# {title}\n\n{body}",
+                }
+            except json.JSONDecodeError:
+                pass
+        proc = run(["glab", "issue", "view", number], cwd=repo)
+        first = proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else ""
+        return {
+            "kind": "gitlab",
+            "ref": number,
+            "title": first or f"issue {number}",
+            "text": proc.stdout,
+        }
+    die("origin remote is neither GitHub nor GitLab — use a markdown brief instead")
+
+
+def read_brief(path: Path):
+    text = path.read_text()
+    title = next(
+        (ln.lstrip("# ").strip() for ln in text.splitlines() if ln.startswith("#")),
+        path.stem,
+    )
+    return {"kind": "brief", "ref": str(path), "title": title, "text": text}
+
+
+def resolve_target(repo: Path, target):
+    if target is None:
+        default = repo / "THRAWN.md"
+        if default.exists():
+            return read_brief(default)
+        die("no target: pass an issue number, a brief.md path, or add THRAWN.md")
+    if re.fullmatch(r"#?\d+", target):
+        return fetch_issue(repo, target.lstrip("#"))
+    path = Path(target)
+    if path.exists() and path.suffix == ".md":
+        return read_brief(path)
+    die(f"target not understood: {target} (issue number or .md file)")
+
+
+def make_run_id(repo: Path, intake: dict) -> str:
+    if intake["kind"] == "github":
+        base = f"gh-{intake['ref']}"
+    elif intake["kind"] == "gitlab":
+        base = f"gl-{intake['ref']}"
+    else:
+        slug = re.sub(r"[^a-z0-9]+", "-", intake["title"].lower()).strip("-")[:24]
+        base = slug or "brief"
+    return unique_run_id(repo, base)
+
+
+# ---------------------------------------------------------------------------
+# Planning — deep think with the planner model
+# ---------------------------------------------------------------------------
+
+def extract_json(text: str) -> dict:
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.S)
+    candidates = [fence.group(1)] if fence else []
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start : end + 1])
+    for cand in candidates:
+        try:
+            return json.loads(cand)
+        except json.JSONDecodeError:
+            continue
+    raise ValueError("no JSON object found in planner output")
+
+
+def validate_plan(cfg: dict, plan: dict, run_id: str) -> dict:
+    tc = cfg["thrawn"]
+    allowed = set(tc["allowed_runners"]) & set(cfg["runners"])
+    tasks = plan.get("tasks") or []
+    if not tasks:
+        die("planner produced no tasks")
+    if len(tasks) > tc["max_tasks"]:
+        tasks = tasks[: tc["max_tasks"]]
+    seen = set()
+    for i, task in enumerate(tasks):
+        task.setdefault("id", f"t{i + 1}")
+        if task["id"] in seen:
+            die(f"plan has duplicate task id: {task['id']}")
+        seen.add(task["id"])
+        task.setdefault("title", task["id"])
+        task.setdefault("deps", [])
+        task.setdefault("complexity", "medium")
+        if task.get("runner") not in allowed:
+            task["runner"] = (
+                "haiku"
+                if task["complexity"] == "low" and "haiku" in allowed
+                else tc["default_runner"]
+            )
+        if "prompt" not in task or not task["prompt"].strip():
+            die(f"plan task {task['id']} has no prompt")
+    ids = {t["id"] for t in tasks}
+    for task in tasks:
+        bad = [d for d in task["deps"] if d not in ids]
+        if bad:
+            die(f"task {task['id']} depends on unknown task(s): {bad}")
+    plan["tasks"] = tasks
+    plan.setdefault("summary", run_id)
+    branch = plan.get("branch") or f"thrawn/{run_id}"
+    plan["branch"] = re.sub(r"[^A-Za-z0-9/_.-]+", "-", branch)
+    plan.setdefault("pr", {})
+    plan["pr"].setdefault("title", plan["summary"][:70])
+    plan["pr"].setdefault("body", plan["summary"])
+    return plan
+
+
+def run_planner(repo: Path, cfg: dict, intake: dict, run_id: str) -> dict:
+    tc = cfg["thrawn"]
+    allowed = [r for r in tc["allowed_runners"] if r in cfg["runners"]]
+    runner_notes = "\n".join(
+        f"- `{name}`: {cfg['runners'][name].get('notes', 'no notes')}"
+        for name in allowed
+    )
+    prompt = render(
+        load_prompt("planner.md"),
+        run_id=run_id,
+        ticket=intake["text"],
+        runners=runner_notes,
+        max_tasks=str(tc["max_tasks"]),
+    )
+    argv = runner_argv(cfg, tc["planner"], prompt)
+    if argv is None:
+        die(f"planner runner `{tc['planner']}` not defined in runners.toml")
+    info(f"deep thinking with {BOLD}{tc['planner']}{RESET} … (this is the slow part)")
+    proc = try_run(argv, cwd=repo, timeout=1800)
+    if proc is None or proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()[-2000:] if proc else "not found"
+        die(f"planner failed:\n{detail}")
+    raw_path = run_dir(repo, run_id) / "planner-raw.txt"
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(proc.stdout)
+    try:
+        plan = extract_json(proc.stdout)
+    except ValueError:
+        die(f"planner output was not valid JSON — raw output saved to {raw_path}")
+    plan = validate_plan(cfg, plan, run_id)
+    (run_dir(repo, run_id) / "plan.json").write_text(json.dumps(plan, indent=2))
+    return plan
+
+
+# ---------------------------------------------------------------------------
+# Spawning — herdr panes when available, plain subprocesses otherwise
+# ---------------------------------------------------------------------------
+
+def herdr_available() -> bool:
+    if os.environ.get("THRAWN_NO_HERDR") == "1":
+        return False
+    if not have("herdr"):
+        return False
+    proc = try_run(["herdr", "status"], timeout=5)
+    return bool(proc and proc.returncode == 0)
+
+
+def _first_match(pattern: str, text: str):
+    m = re.search(pattern, text or "")
+    return m.group(1) if m else None
+
+
+class HerdrSpawner:
+    """One tab per task in the current workspace; process runs via agent start."""
+
+    def __init__(self):
+        proc = try_run(["herdr", "pane", "current"], timeout=5)
+        out = (proc.stdout if proc else "") or ""
+        self.workspace = _first_match(r'"workspace_id"\s*:\s*"([^"]+)"', out)
+
+    def spawn(self, name, label, cwd, cmdline):
+        tab_id = None
+        if self.workspace:
+            proc = try_run(
+                ["herdr", "tab", "create", "--workspace", self.workspace,
+                 "--label", label],
+                timeout=10,
+            )
+            tab_id = _first_match(
+                r'"tab_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
+            )
+        argv = ["herdr", "agent", "start", name, "--cwd", str(cwd), "--no-focus"]
+        if tab_id:
+            argv += ["--tab", tab_id]
+        elif self.workspace:
+            argv += ["--workspace", self.workspace]
+        argv += ["--", "bash", "-lc", cmdline]
+        proc = try_run(argv, timeout=15)
+        out = ((proc.stdout or "") + (proc.stderr or "")) if proc else ""
+        pane = _first_match(r'"(?:pane_id|terminal_id)"\s*:\s*"([^"]+)"', out)
+        if proc is None or proc.returncode != 0:
+            # herdr refused — run headless instead so the task still happens
+            return LocalSpawner().spawn(name, label, cwd, cmdline)
+        return {"via": "herdr", "pane": pane, "tab": tab_id}
+
+    def close(self, handle):
+        if handle.get("via") == "herdr" and handle.get("pane"):
+            try_run(["herdr", "pane", "close", handle["pane"]], timeout=5)
+        elif handle.get("via") == "local":
+            LocalSpawner().close(handle)
+
+
+class LocalSpawner:
+    """Fallback: detached background process; output is in the task log."""
+
+    def spawn(self, name, label, cwd, cmdline):
+        proc = subprocess.Popen(
+            ["bash", "-lc", cmdline],
+            cwd=cwd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return {"via": "local", "pid": proc.pid}
+
+    def close(self, handle):
+        pid = handle.get("pid")
+        if pid:
+            try:
+                os.killpg(os.getpgid(pid), 15)
+            except (OSError, ProcessLookupError):
+                pass
+
+
+def make_spawner():
+    return HerdrSpawner() if herdr_available() else LocalSpawner()
+
+
+def notify(title: str, sound: str = "done") -> None:
+    if herdr_available():
+        try_run(["herdr", "notification", "show", title, "--sound", sound], timeout=5)
+
+
+def wrapped_cmdline(argv, log: Path, exit_file: Path) -> str:
+    cmd = " ".join(shlex.quote(a) for a in argv)
+    return (
+        "set -o pipefail; "
+        f"{cmd} 2>&1 | tee {shlex.quote(str(log))}; ec=$?; "
+        f"echo $ec > {shlex.quote(str(exit_file))}; "
+        "echo; echo \"[thrawn] task finished with exit $ec\"; exit $ec"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dispatch orchestration
+# ---------------------------------------------------------------------------
+
+def task_paths(repo: Path, run_id: str, task_id: str):
+    rdir = run_dir(repo, run_id)
+    return rdir / f"task-{task_id}.log", rdir / f"task-{task_id}.exit"
+
+
+def spawn_task(repo, cfg, state, plan, task, spawner):
+    run_id = state["run_id"]
+    tid = task["id"]
+    branch = f"thrawn/{run_id}/{tid}"
+    worktree = state_dir(repo) / "worktrees" / run_id / tid
+    worktree.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        ["git", "worktree", "add", "-b", branch, str(worktree), state["base_commit"]],
+        cwd=repo,
+    )
+
+    prompt = render(
+        load_prompt("executor.md"),
+        run_id=run_id,
+        task_id=tid,
+        task_title=task["title"],
+        task_prompt=task["prompt"],
+        summary=plan.get("summary", ""),
+        branch=branch,
+        siblings="\n".join(
+            f"- {t['id']}: {t['title']}" for t in plan["tasks"] if t["id"] != tid
+        )
+        or "(none)",
+    )
+    argv = runner_argv(cfg, task["runner"], prompt)
+    if argv is None:
+        die(f"runner `{task['runner']}` not defined in runners.toml")
+
+    log, exit_file = task_paths(repo, run_id, tid)
+    exit_file.unlink(missing_ok=True)
+    handle = spawner.spawn(
+        name=f"thrawn-{run_id}-{tid}",
+        label=f"⚔ {tid} {task['title'][:24]}",
+        cwd=worktree,
+        cmdline=wrapped_cmdline(argv, log, exit_file),
+    )
+    state["tasks"][tid] = {
+        "status": "running",
+        "runner": task["runner"],
+        "branch": branch,
+        "worktree": str(worktree),
+        "handle": handle,
+        "started": now_iso(),
+    }
+    save_state(repo, state)
+
+
+def poll_tasks(repo: Path, state: dict) -> None:
+    for tid, ts in state["tasks"].items():
+        if ts["status"] != "running":
+            continue
+        _, exit_file = task_paths(repo, state["run_id"], tid)
+        if exit_file.exists():
+            try:
+                code = int(exit_file.read_text().strip() or "1")
+            except ValueError:
+                code = 1
+            ts["status"] = "done" if code == 0 else "failed"
+            ts["exit"] = code
+            ts["finished"] = now_iso()
+
+
+def deps_done(plan: dict, state: dict, task: dict) -> bool:
+    return all(
+        state["tasks"].get(d, {}).get("status") == "done" for d in task["deps"]
+    )
+
+
+def render_board(state: dict, plan: dict) -> None:
+    print("\x1b[2J\x1b[H", end="")
+    print(f"{BOLD}⚔ thrawn{RESET} — {state['run_id']}  {DIM}{plan.get('summary','')[:60]}{RESET}")
+    print(f"{DIM}phase: {state['phase']}   base: {state['base_branch']} @ {state['base_commit'][:8]}{RESET}")
+    print()
+    for task in plan["tasks"]:
+        ts = state["tasks"].get(task["id"], {"status": "pending"})
+        icon = STATUS_ICON.get(ts["status"], "?")
+        deps = f" {DIM}(after {','.join(task['deps'])}){RESET}" if task["deps"] else ""
+        print(
+            f"  {icon} {task['id']:<4} {task['title'][:44]:<44} "
+            f"{DIM}{task.get('runner','?'):<7}{RESET} {ts['status']}{deps}"
+        )
+    integ = state.get("integration", {})
+    if integ:
+        print()
+        print(f"  {DIM}integration:{RESET} {integ.get('status', 'pending')}"
+              + (f"  attempt {integ['attempt']}" if integ.get("attempt") else ""))
+    print()
+    if state["phase"] == "green":
+        print(f"  {GREEN}{BOLD}ALL GREEN{RESET}  ship code: {BOLD}{state['ship_code']}{RESET}")
+        print(f"  {DIM}→ thrawn ship {state['run_id']} --code {state['ship_code']}{RESET}")
+    elif state["phase"] == "failed":
+        print(f"  {RED}{BOLD}FAILED{RESET} — see logs in .thrawn/runs/{state['run_id']}/")
+        print(f"  {DIM}fix things, then: thrawn integrate {state['run_id']}{RESET}")
+    else:
+        print(f"  {DIM}watching … ctrl-c is safe; resume with `thrawn watch {state['run_id']}`{RESET}")
+
+
+def watch(repo: Path, cfg: dict, state: dict) -> None:
+    plan = json.loads((run_dir(repo, state["run_id"]) / "plan.json").read_text())
+    spawner = make_spawner()
+    poll = cfg["thrawn"]["poll_seconds"]
+
+    while True:
+        poll_tasks(repo, state)
+        for task in plan["tasks"]:
+            ts = state["tasks"].get(task["id"])
+            if ts is None and deps_done(plan, state, task):
+                spawn_task(repo, cfg, state, plan, task, spawner)
+        save_state(repo, state)
+        render_board(state, plan)
+
+        statuses = [
+            state["tasks"].get(t["id"], {}).get("status", "pending")
+            for t in plan["tasks"]
+        ]
+        if "failed" in statuses:
+            failed = [
+                t["id"] for t in plan["tasks"]
+                if state["tasks"].get(t["id"], {}).get("status") == "failed"
+            ]
+            state["phase"] = "failed"
+            save_state(repo, state)
+            render_board(state, plan)
+            notify(f"thrawn {state['run_id']}: task {','.join(failed)} failed", "request")
+            die(f"task(s) failed: {', '.join(failed)} — logs in .thrawn/runs/{state['run_id']}/")
+        if all(s == "done" for s in statuses):
+            break
+        time.sleep(poll)
+
+    integrate(repo, cfg, state)
+
+
+# ---------------------------------------------------------------------------
+# Integration — merge, fix, verify
+# ---------------------------------------------------------------------------
+
+def detect_checks(repo: Path, cfg: dict, plan: dict):
+    if plan.get("checks"):
+        return plan["checks"]
+    if cfg["checks"]["commands"]:
+        return cfg["checks"]["commands"]
+    makefile = repo / "Makefile"
+    if makefile.exists():
+        targets = set(re.findall(r"^([A-Za-z0-9_.-]+):", makefile.read_text(), re.M))
+        if "check" in targets:
+            return ["make check"]
+        cmds = [f"make {t}" for t in ("lint", "test") if t in targets]
+        if cmds:
+            return cmds
+    return []
+
+
+def run_integrator_agent(repo, cfg, state, worktree, mode, detail) -> bool:
+    """Run the integrator in a visible pane, wait for it. True on exit 0."""
+    run_id = state["run_id"]
+    attempt = state["integration"]["attempt"]
+    prompt = render(
+        load_prompt("integrator.md"),
+        run_id=run_id,
+        mode=mode,
+        detail=detail,
+        branch=state["integration"]["branch"],
+    )
+    argv = runner_argv(cfg, cfg["thrawn"]["integrator"], prompt)
+    if argv is None:
+        die(f"integrator runner `{cfg['thrawn']['integrator']}` not defined")
+    log = run_dir(repo, run_id) / f"integrator-{attempt}.log"
+    exit_file = run_dir(repo, run_id) / f"integrator-{attempt}.exit"
+    exit_file.unlink(missing_ok=True)
+    spawner = make_spawner()
+    spawner.spawn(
+        name=f"thrawn-{run_id}-integrator-{attempt}",
+        label=f"⚔ integrator #{attempt}",
+        cwd=worktree,
+        cmdline=wrapped_cmdline(argv, log, exit_file),
+    )
+    while not exit_file.exists():
+        time.sleep(2)
+    return exit_file.read_text().strip() == "0"
+
+
+def integrate(repo: Path, cfg: dict, state: dict) -> None:
+    run_id = state["run_id"]
+    plan = json.loads((run_dir(repo, run_id) / "plan.json").read_text())
+    state["phase"] = "integrating"
+    integ = state.setdefault(
+        "integration", {"status": "merging", "attempt": 0, "branch": plan["branch"]}
+    )
+    integ["status"] = "merging"
+    save_state(repo, state)
+
+    worktree = state_dir(repo) / "worktrees" / run_id / "_integration"
+    if not worktree.exists():
+        proc = try_run(
+            ["git", "worktree", "add", "-b", plan["branch"], str(worktree),
+             state["base_commit"]],
+            cwd=repo,
+        )
+        if proc is None or proc.returncode != 0:
+            # branch may exist from a previous attempt
+            run(["git", "worktree", "add", str(worktree), plan["branch"]], cwd=repo)
+    integ["worktree"] = str(worktree)
+
+    merged = set(integ.get("merged", []))
+    for task in plan["tasks"]:
+        tid = task["id"]
+        if tid in merged:
+            continue
+        branch = state["tasks"][tid]["branch"]
+        proc = try_run(["git", "merge", "--no-ff", "--no-edit", branch], cwd=worktree)
+        if proc is None or proc.returncode != 0:
+            integ["attempt"] += 1
+            save_state(repo, state)
+            status = try_run(["git", "status", "--porcelain"], cwd=worktree)
+            detail = (
+                f"Merging branch `{branch}` (task {tid}: {task['title']}) hit "
+                f"conflicts.\n\ngit status:\n{status.stdout if status else '?'}"
+            )
+            info(f"merge conflict on {tid} — dispatching integrator")
+            ok = run_integrator_agent(repo, cfg, state, worktree, "conflict", detail)
+            unmerged = try_run(["git", "ls-files", "-u"], cwd=worktree)
+            if not ok or (unmerged and unmerged.stdout.strip()):
+                integ["status"] = "conflict-unresolved"
+                state["phase"] = "failed"
+                save_state(repo, state)
+                die(f"integrator could not resolve conflicts for {tid} "
+                    f"(worktree: {worktree})")
+        merged.add(tid)
+        integ["merged"] = sorted(merged)
+        save_state(repo, state)
+
+    # checks
+    checks = detect_checks(repo, cfg, plan)
+    integ["checks"] = checks
+    max_attempts = cfg["thrawn"]["integrator_attempts"]
+    while True:
+        integ["status"] = "checking"
+        save_state(repo, state)
+        failed_output = None
+        for cmd in checks:
+            info(f"running check: {cmd}")
+            proc = try_run(["bash", "-lc", cmd], cwd=worktree, timeout=1800)
+            if proc is None or proc.returncode != 0:
+                out = ((proc.stdout or "") + "\n" + (proc.stderr or "")) if proc else ""
+                failed_output = f"$ {cmd}\n{out.strip()[-4000:]}"
+                break
+        if failed_output is None:
+            break
+        integ["attempt"] += 1
+        if integ["attempt"] > max_attempts:
+            integ["status"] = "checks-failing"
+            state["phase"] = "failed"
+            save_state(repo, state)
+            notify(f"thrawn {run_id}: checks failing", "request")
+            die(f"checks still failing after {max_attempts} fix attempts "
+                f"(worktree: {worktree})")
+        integ["status"] = f"fixing (attempt {integ['attempt']})"
+        save_state(repo, state)
+        info(f"checks failed — dispatching integrator (attempt {integ['attempt']})")
+        run_integrator_agent(
+            repo, cfg, state, worktree, "checks",
+            f"These checks failed:\n\n{failed_output}",
+        )
+
+    integ["status"] = "green"
+    state["phase"] = "green"
+    state["ship_code"] = f"{secrets.randbelow(10**6):06d}"
+    save_state(repo, state)
+    notify(f"thrawn {run_id}: ALL GREEN — ready to ship", "done")
+    render_board(state, plan)
+
+
+# ---------------------------------------------------------------------------
+# Ship — the code gate, then push + PR/MR
+# ---------------------------------------------------------------------------
+
+def ship(repo: Path, cfg: dict, run_id: str, code) -> None:
+    state = load_state(repo, run_id)
+    if state["phase"] == "shipped":
+        die(f"run {run_id} already shipped: {state.get('pr_url', '')}")
+    if state["phase"] != "green":
+        die(f"run {run_id} is not green (phase: {state['phase']}) — nothing ships "
+            "until the board is green")
+    if not code:
+        die("ship code required: --code NNNNNN (it is on the status board)")
+    if code != state["ship_code"]:
+        die("wrong ship code — read it off `thrawn status`")
+
+    plan = json.loads((run_dir(repo, run_id) / "plan.json").read_text())
+    worktree = Path(state["integration"]["worktree"])
+    branch = state["integration"]["branch"]
+    host, _ = detect_host(repo)
+
+    proc = try_run(["git", "push", "-u", "origin", branch], cwd=worktree)
+    if proc is None or proc.returncode != 0:
+        die(f"push failed:\n{(proc.stderr if proc else '').strip()[-1500:]}")
+    info(f"pushed {branch}")
+
+    title, body = plan["pr"]["title"], plan["pr"]["body"]
+    if state["target"]["kind"] == "github":
+        body += f"\n\nCloses #{state['target']['ref']}"
+    body += "\n\n⚔ orchestrated by thrawn"
+    url = ""
+    if host == "github" and have("gh"):
+        proc = try_run(
+            ["gh", "pr", "create", "--title", title, "--body", body,
+             "--head", branch, "--base", state["base_branch"]],
+            cwd=worktree,
+        )
+        if proc and proc.returncode == 0:
+            url = proc.stdout.strip().splitlines()[-1]
+    elif host == "gitlab" and have("glab"):
+        proc = try_run(
+            ["glab", "mr", "create", "--title", title, "--description", body,
+             "--source-branch", branch, "--target-branch", state["base_branch"],
+             "--yes"],
+            cwd=worktree,
+        )
+        if proc and proc.returncode == 0:
+            match = re.search(r"https?://\S+", proc.stdout)
+            url = match.group(0) if match else ""
+    if not url:
+        info(f"{YELLOW}branch pushed but PR/MR creation failed or unsupported — "
+             f"create it manually{RESET}")
+    else:
+        info(f"{GREEN}opened: {url}{RESET}")
+        if state["target"]["kind"] == "github" and have("gh"):
+            try_run(["gh", "issue", "comment", state["target"]["ref"],
+                     "--body", f"⚔ thrawn shipped this: {url}"], cwd=repo)
+
+    state["phase"] = "shipped"
+    state["pr_url"] = url
+    state["shipped"] = now_iso()
+    save_state(repo, state)
+    notify(f"thrawn {run_id}: shipped", "done")
+
+
+# ---------------------------------------------------------------------------
+# Other commands
+# ---------------------------------------------------------------------------
+
+def cmd_status(repo: Path, run_id) -> None:
+    state = load_state(repo, run_id) if run_id else latest_run(repo)
+    plan_path = run_dir(repo, state["run_id"]) / "plan.json"
+    if plan_path.exists():
+        poll_tasks(repo, state)
+        save_state(repo, state)
+        render_board(state, json.loads(plan_path.read_text()))
+    else:
+        print(json.dumps(state, indent=2))
+
+
+def cmd_runs(repo: Path) -> None:
+    runs = list_runs(repo)
+    if not runs:
+        info("no runs yet")
+        return
+    for state in runs:
+        colour = {"green": GREEN, "shipped": GREEN, "failed": RED}.get(
+            state["phase"], YELLOW
+        )
+        print(f"  {state['run_id']:<20} {colour}{state['phase']:<12}{RESET} "
+              f"{DIM}{state.get('created', '')}{RESET}  "
+              f"{state.get('target', {}).get('title', '')[:48]}")
+
+
+def cmd_abort(repo: Path, run_id) -> None:
+    state = load_state(repo, run_id) if run_id else latest_run(repo)
+    spawner = make_spawner()
+    for ts in state["tasks"].values():
+        if ts.get("handle"):
+            spawner.close(ts["handle"])
+        wt = ts.get("worktree")
+        if wt and Path(wt).exists():
+            try_run(["git", "worktree", "remove", "--force", wt], cwd=repo)
+        if ts.get("branch"):
+            try_run(["git", "branch", "-D", ts["branch"]], cwd=repo)
+    integ = state.get("integration", {})
+    if integ.get("worktree") and Path(integ["worktree"]).exists():
+        try_run(["git", "worktree", "remove", "--force", integ["worktree"]], cwd=repo)
+    state["phase"] = "aborted"
+    save_state(repo, state)
+    info(f"aborted {state['run_id']} — worktrees removed, task branches deleted")
+
+
+def dispatch(repo: Path, cfg: dict, target, plan_only: bool) -> None:
+    ensure_git_exclude(repo)
+    dirty = try_run(["git", "status", "--porcelain"], cwd=repo)
+    if dirty and dirty.stdout.strip():
+        info(f"{YELLOW}note: uncommitted changes in this repo will NOT be visible "
+             f"to task agents (they branch from HEAD){RESET}")
+    intake = resolve_target(repo, target)
+    run_id = make_run_id(repo, intake)
+    info(f"run {BOLD}{run_id}{RESET}: {intake['title']}")
+
+    base_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo).stdout.strip()
+    base_commit = run(["git", "rev-parse", "HEAD"], cwd=repo).stdout.strip()
+    state = {
+        "run_id": run_id,
+        "created": now_iso(),
+        "phase": "planning",
+        "target": {"kind": intake["kind"], "ref": intake["ref"], "title": intake["title"]},
+        "base_branch": base_branch,
+        "base_commit": base_commit,
+        "tasks": {},
+    }
+    save_state(repo, state)
+
+    plan = run_planner(repo, cfg, intake, run_id)
+    info(f"plan: {len(plan['tasks'])} task(s) → "
+         + ", ".join(f"{t['id']}[{t['runner']}]" for t in plan["tasks"]))
+    if plan_only:
+        state["phase"] = "planned"
+        save_state(repo, state)
+        print(json.dumps(plan, indent=2))
+        info(f"planned only — execute with: thrawn watch {run_id}")
+        return
+
+    state["phase"] = "working"
+    save_state(repo, state)
+    watch(repo, cfg, state)
+
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
+USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
+
+  thrawn <issue#>              dispatch from a GitHub/GitLab issue
+  thrawn <brief.md>            dispatch from a markdown brief
+  thrawn                       dispatch from ./THRAWN.md
+  thrawn plan <target>         plan only (review before executing)
+  thrawn watch [run]           resume/execute a run
+  thrawn status [run]          show the board (and ship code when green)
+  thrawn ship <run> --code N   push + open PR/MR (requires green + code)
+  thrawn integrate [run]       retry the integration phase
+  thrawn runs                  list runs in this repo
+  thrawn abort [run]           kill agents, remove worktrees + branches
+"""
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help", "help"):
+        print(USAGE)
+        return
+
+    repo = repo_root()
+    cfg = load_config(repo)
+    sub = args[0] if args else None
+
+    if sub == "plan":
+        dispatch(repo, cfg, args[1] if len(args) > 1 else None, plan_only=True)
+    elif sub == "watch":
+        state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)
+        if state["phase"] in ("shipped", "aborted"):
+            die(f"run {state['run_id']} is {state['phase']}")
+        state["phase"] = "working"
+        watch(repo, cfg, state)
+    elif sub == "status":
+        cmd_status(repo, args[1] if len(args) > 1 else None)
+    elif sub == "runs":
+        cmd_runs(repo)
+    elif sub == "abort":
+        cmd_abort(repo, args[1] if len(args) > 1 else None)
+    elif sub == "integrate":
+        state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)
+        integrate(repo, cfg, state)
+    elif sub == "ship":
+        parser = argparse.ArgumentParser(prog="thrawn ship")
+        parser.add_argument("run_id")
+        parser.add_argument("--code", required=True)
+        ns = parser.parse_args(args[1:])
+        ship(repo, cfg, ns.run_id, ns.code)
+    else:
+        dispatch(repo, cfg, sub, plan_only=False)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print()
+        info("interrupted — running agents keep going; resume with `thrawn watch`")
+        sys.exit(130)

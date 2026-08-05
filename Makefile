@@ -22,7 +22,7 @@ all: install setup ## Install everything and configure
 install: install-herdr install-spreader install-lazygit ## Install all dependencies
 
 .PHONY: setup
-setup: setup-config setup-hooks setup-workspaces ## Configure herdr with this repo's settings
+setup: setup-config setup-hooks setup-workspaces setup-thrawn ## Configure herdr with this repo's settings
 
 # ============================================================================
 # 📦 Installation
@@ -113,6 +113,19 @@ setup-workspaces: ## Create all workspaces using herdr-spreader
 		exit 1; \
 	fi
 
+.PHONY: setup-thrawn
+setup-thrawn: ## Install the thrawn orchestrator CLI
+	@echo "$(GREEN)Setting up thrawn...$(RESET)"
+	@mkdir -p $(HOME)/.local/bin
+	@chmod +x $(REPO_DIR)/thrawn/bin/thrawn
+	@ln -sf $(REPO_DIR)/thrawn/bin/thrawn $(HOME)/.local/bin/thrawn
+	@echo "$(GREEN)thrawn linked:$(RESET)"
+	@echo "  $(YELLOW)~/.local/bin/thrawn$(RESET)"
+	@case ":$$PATH:" in \
+		*":$(HOME)/.local/bin:"*) ;; \
+		*) echo "$(RED)~/.local/bin is not on your PATH — add it to your shell rc$(RESET)" ;; \
+	esac
+
 # ============================================================================
 # 🔄 Updates
 # ============================================================================
@@ -145,6 +158,7 @@ unlink: ## Remove all symlinks (keeps tools installed)
 	@rm -f $(HERDR_CONFIG_DIR)/setup-tabs.sh
 	@rm -f $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
+	@rm -f $(HOME)/.local/bin/thrawn
 	@echo "$(GREEN)Symlinks removed$(RESET)"
 
 .PHONY: uninstall
@@ -174,6 +188,9 @@ status: ## Show installation status
 	@echo "$(YELLOW)Hook symlinks:$(RESET)"
 	@printf "  claude hook:    "; [ -L $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@printf "  codex hook:     "; [ -L $(CODEX_DIR)/herdr-agent-state.sh ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
+	@echo ""
+	@echo "$(YELLOW)Thrawn:$(RESET)"
+	@printf "  thrawn CLI:     "; [ -L $(HOME)/.local/bin/thrawn ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 
 # ============================================================================
 # 📖 Help
