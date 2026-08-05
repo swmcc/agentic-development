@@ -2,6 +2,8 @@
 
 *Plan deeply, execute in parallel.*
 
+![thrawn running inside herdr](docs/thrawn-in-herdr.png)
+
 Give thrawn a ticket or a markdown brief. It:
 
 1. **Deep-thinks** a plan with a strong model (fable) that explores your repo read-only
@@ -62,11 +64,35 @@ thrawn abort gh-123              # kill agents, delete worktrees + branches
 Ctrl-C during a run is safe — agents keep working in their panes; resume the
 orchestrator with `thrawn watch`.
 
+## Ticket sources
+
+thrawn works out where tickets live from the repo itself — no config:
+
+1. `git remote get-url origin` is inspected
+2. URL contains `github` → `gh issue view N --json title,body,labels`
+3. URL contains `gitlab` → `glab issue view N` (JSON output when the
+   installed glab supports it, plain text otherwise)
+4. Neither → thrawn refuses the issue number and tells you to use a brief
+
+The same detection drives shipping: GitHub repos get `gh pr create` (with
+`Closes #N` in the body and a comment back on the issue), GitLab repos get
+`glab mr create`.
+
 ## Briefs
 
 Instead of a ticket, drop a `THRAWN.md` in the repo root (or pass any `.md`
 path). Template in [templates/THRAWN.md](templates/THRAWN.md) — goal,
 context, constraints, routing hints, out-of-scope.
+
+## How it talks to you
+
+| Channel | What you see |
+|---------|--------------|
+| **The board** | The dispatch pane becomes a live status board: one line per task with runner + state (`○ pending ◐ running ● done ✖ failed`), integration progress, and the ship code when green. Also on demand via `thrawn status`. |
+| **Herdr tabs** | Every worker gets its own tab (`⚔ t1 …`) streaming the agent's full output live. Herdr's own working/idle indicators apply to each pane. |
+| **Notifications** | `herdr notification show` fires on the big transitions: task failure, checks failing, ALL GREEN, shipped. |
+| **Logs** | Everything is tee'd to `.thrawn/runs/<run>/` — `task-*.log`, `integrator-*.log`, `planner-raw.txt` — so nothing is lost when a pane closes. |
+| **State** | `state.json` per run is the source of truth (`thrawn runs` summarises it). |
 
 ## Runner routing
 
