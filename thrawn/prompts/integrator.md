@@ -26,6 +26,14 @@ If mode is "checks":
 3. Re-run the failing command until it passes.
 4. Commit the fix (🐛 prefix).
 
+If a TRIAGE note above says the check fails on the base commit too, the
+failure is environmental or pre-existing — do not rework the feature code.
+Fix the underlying issue if you can; if only a human can fix it
+(permissions, missing system deps, credentials), write a section titled
+`## BLOCKED` stating the exact command they must run, and exit non-zero.
+
 Rules: never push, never switch branches, never touch `.thrawn/`. Leave the
-worktree clean and exit 0 only if you genuinely succeeded; exit non-zero if
-you could not.
+worktree clean. Exit 0 ONLY if the failing checks now genuinely pass —
+partial success, "the merge is sound but checks fail", or being blocked all
+mean exit non-zero. thrawn re-runs the checks after you exit; an
+exit 0 that doesn't survive that re-run wastes an integration attempt.

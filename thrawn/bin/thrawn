@@ -10,6 +10,7 @@ Stdlib only. Python >= 3.11 (tomllib).
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -48,6 +49,30 @@ STATUS_ICON = {
 
 def info(msg: str) -> None:
     print(f"{BLUE}thrawn{RESET} {msg}")
+
+
+def live(msg: str) -> None:
+    """In-place single-line progress update (tty only)."""
+    if sys.stdout.isatty():
+        print(f"\r\x1b[2K  {msg}", end="", flush=True)
+
+
+def live_done() -> None:
+    if sys.stdout.isatty():
+        print("\r\x1b[2K", end="", flush=True)
+
+
+def confirm(question: str) -> bool:
+    """Explicit human consent. Non-interactive contexts always answer no —
+    thrawn never assumes a yes."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return False
+    try:
+        ans = input(f"{BLUE}thrawn{RESET} {question} [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return ans in ("y", "yes")
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -114,6 +139,22 @@ def state_dir(repo: Path) -> Path:
     return repo / ".thrawn"
 
 
+def worktree_base(repo: Path) -> Path:
+    """Worktrees live OUTSIDE the repo, in a non-hidden path.
+
+    NO path component may start with a dot — tools that special-case hidden
+    paths break inside them. rubocop, for one, disables ALL Include/Exclude
+    filtering when the base dir is under a hidden directory (this rules out
+    both <repo>/.thrawn and ~/.cache), so checks pass at the repo root but
+    fail in the worktree on files like bin/* and db/schema.rb."""
+    tag = hashlib.sha1(str(repo).encode()).hexdigest()[:8]
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches" / "thrawn"
+    else:
+        base = Path(f"/var/tmp/thrawn-{os.environ.get('USER', 'thrawn')}")
+    return base / "worktrees" / f"{repo.name}-{tag}"
+
+
 def ensure_git_exclude(repo: Path) -> None:
     """Keep .thrawn/ out of git without touching tracked .gitignore."""
     exclude = repo / ".git" / "info" / "exclude"
@@ -153,8 +194,11 @@ def load_config(repo: Path) -> dict:
             "recon_runner": "",  # empty = use the planner runner
             "recon_max_age_commits": 50,
             "auto_recon": True,  # dispatch runs recon first when no cache exists
+            "auto_fix": False,   # dispatch integrator agents WITHOUT asking? no.
+            "allow_no_checks": False,  # green with zero checks? never silently.
         },
         "checks": {"commands": []},
+        "worktree": {"setup": ""},
         "runners": {},
     }
     paths = [
@@ -197,6 +241,131 @@ def render(template: str, **kw: str) -> str:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def fmt_dur(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m{seconds % 60:02d}s"
+    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+
+
+def since(iso: str) -> str:
+    try:
+        start = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except (TypeError, ValueError):
+        return "?"
+    return fmt_dur((datetime.now(timezone.utc) - start).total_seconds())
+
+
+# ---------------------------------------------------------------------------
+# Activity — "what is the agent doing right now" from log tails
+# ---------------------------------------------------------------------------
+
+def _last_lines(path: Path, nbytes: int = 16384):
+    try:
+        with path.open("rb") as fh:
+            fh.seek(max(0, path.stat().st_size - nbytes))
+            return fh.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return []
+
+
+def _describe_event(evt: dict):
+    """One readable line from a claude --output-format stream-json event."""
+    etype = evt.get("type")
+    if etype == "assistant":
+        for block in reversed((evt.get("message") or {}).get("content", [])):
+            btype = block.get("type")
+            if btype == "tool_use":
+                arg = block.get("input") or {}
+                hint = (arg.get("description") or arg.get("command")
+                        or arg.get("file_path") or arg.get("pattern") or "")
+                name = block.get("name", "tool")
+                return f"{name}: {hint}" if hint else name
+            if btype == "text" and block.get("text", "").strip():
+                return block["text"].strip().splitlines()[0]
+    if etype == "system" and evt.get("subtype") == "init":
+        return "session started"
+    if etype == "result":
+        return "wrapping up"
+    return None
+
+
+def describe_activity(log: Path, width: int = 60) -> str:
+    """Last meaningful line of a log — JSONL-aware, raw-text fallback."""
+    for line in reversed(_last_lines(log)):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("{"):
+            try:
+                evt = json.loads(line)
+            except json.JSONDecodeError:
+                return line[:width]
+            desc = _describe_event(evt)
+            if desc:
+                return desc[:width]
+            continue  # uninteresting event — keep looking back
+        return line[:width]
+    return ""
+
+
+def stream_cmd(argv, cwd, log: Path, label: str, timeout: int = 1800,
+               echo: bool = False) -> bool:
+    """Run a command, output to `log`.
+
+    echo=True: the command's full output ALSO streams to this terminal,
+    line by line, like running it yourself — nothing hidden, nothing erased.
+    echo=False: quiet, with a live elapsed/activity ticker instead."""
+    start = time.monotonic()
+    last_note = 0.0
+    with log.open("wb") as fh:
+        proc = subprocess.Popen(
+            argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        if echo:
+            for chunk in iter(proc.stdout.readline, b""):
+                fh.write(chunk)
+                fh.flush()
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.flush()
+                if time.monotonic() - start > timeout:
+                    proc.kill()
+                    info(f"{RED}timed out after "
+                         f"{fmt_dur(time.monotonic() - start)}: {label}{RESET}")
+                    return False
+            proc.wait()
+        else:
+            while True:
+                try:
+                    proc.wait(timeout=2)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+                elapsed = time.monotonic() - start
+                if elapsed > timeout:
+                    proc.kill()
+                    live_done()
+                    info(f"{RED}timed out after {fmt_dur(elapsed)}: {label}{RESET}")
+                    return False
+                act = describe_activity(log, 50)
+                if sys.stdout.isatty():
+                    live(f"{YELLOW}◐{RESET} {label} {YELLOW}{fmt_dur(elapsed)}{RESET}"
+                         + (f" {DIM}{act}{RESET}" if act else ""))
+                elif elapsed - last_note >= 30:
+                    info(f"… {label} {fmt_dur(elapsed)}" + (f" — {act}" if act else ""))
+                    last_note = elapsed
+            live_done()
+            # drain anything the pipe still holds into the log
+            rest = proc.stdout.read()
+            if rest:
+                fh.write(rest)
+    return proc.returncode == 0
 
 
 def run_dir(repo: Path, run_id: str) -> Path:
@@ -445,11 +614,14 @@ def validate_plan(cfg: dict, plan: dict, run_id: str) -> dict:
         task.setdefault("deps", [])
         task.setdefault("complexity", "medium")
         if task.get("runner") not in allowed:
-            task["runner"] = (
+            replacement = (
                 "haiku"
                 if task["complexity"] == "low" and "haiku" in allowed
                 else tc["default_runner"]
             )
+            info(f"{YELLOW}plan wanted runner `{task.get('runner')}` for "
+                 f"{task['id']} — not allowed/defined, using `{replacement}`{RESET}")
+            task["runner"] = replacement
         if "prompt" not in task or not task["prompt"].strip():
             die(f"plan task {task['id']} has no prompt")
     ids = {t["id"] for t in tasks}
@@ -520,13 +692,42 @@ def _first_match(pattern: str, text: str):
     return m.group(1) if m else None
 
 
-class HerdrSpawner:
-    """One tab per task in the current workspace; process runs via agent start."""
+def ensure_herdr_workspace(state: dict):
+    """Create (or reuse) a dedicated herdr workspace for this run.
 
-    def __init__(self):
-        proc = try_run(["herdr", "pane", "current"], timeout=5)
-        out = (proc.stdout if proc else "") or ""
-        self.workspace = _first_match(r'"workspace_id"\s*:\s*"([^"]+)"', out)
+    Every agent of the run — tasks and integrators — lands in it as a
+    labeled tab, so the whole run is visible in one place regardless of
+    where thrawn was launched from."""
+    if not herdr_available():
+        return None
+    ws = state.get("herdr_workspace")
+    if ws:
+        proc = try_run(["herdr", "workspace", "get", ws], timeout=5)
+        if proc and proc.returncode == 0:
+            return ws
+    proc = try_run(
+        ["herdr", "workspace", "create", "--label", f"⚔ {state['run_id']}",
+         "--no-focus"],
+        timeout=10,
+    )
+    ws = _first_match(
+        r'"workspace_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
+    )
+    if ws:
+        state["herdr_workspace"] = ws
+        info(f"herdr workspace {BOLD}⚔ {state['run_id']}{RESET} — agents appear there")
+    return ws
+
+
+class HerdrSpawner:
+    """One labeled tab per agent in the run's dedicated workspace."""
+
+    def __init__(self, workspace=None):
+        self.workspace = workspace
+        if not self.workspace:
+            proc = try_run(["herdr", "pane", "current"], timeout=5)
+            out = (proc.stdout if proc else "") or ""
+            self.workspace = _first_match(r'"workspace_id"\s*:\s*"([^"]+)"', out)
 
     def spawn(self, name, label, cwd, cmdline):
         tab_id = None
@@ -549,7 +750,8 @@ class HerdrSpawner:
         out = ((proc.stdout or "") + (proc.stderr or "")) if proc else ""
         pane = _first_match(r'"(?:pane_id|terminal_id)"\s*:\s*"([^"]+)"', out)
         if proc is None or proc.returncode != 0:
-            # herdr refused — run headless instead so the task still happens
+            info(f"{YELLOW}herdr refused to open a pane for {label} — running "
+                 f"headless; output only in the run logs{RESET}")
             return LocalSpawner().spawn(name, label, cwd, cmdline)
         return {"via": "herdr", "pane": pane, "tab": tab_id}
 
@@ -567,6 +769,7 @@ class LocalSpawner:
         proc = subprocess.Popen(
             ["bash", "-lc", cmdline],
             cwd=cwd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
@@ -582,8 +785,11 @@ class LocalSpawner:
                 pass
 
 
-def make_spawner():
-    return HerdrSpawner() if herdr_available() else LocalSpawner()
+def make_spawner(state=None):
+    if not herdr_available():
+        return LocalSpawner()
+    ws = ensure_herdr_workspace(state) if state is not None else None
+    return HerdrSpawner(ws)
 
 
 def notify(title: str, sound: str = "done") -> None:
@@ -593,9 +799,10 @@ def notify(title: str, sound: str = "done") -> None:
 
 def wrapped_cmdline(argv, log: Path, exit_file: Path) -> str:
     cmd = " ".join(shlex.quote(a) for a in argv)
+    me = shlex.quote(str(Path(__file__).resolve()))
     return (
         "set -o pipefail; "
-        f"{cmd} 2>&1 | tee {shlex.quote(str(log))}; ec=$?; "
+        f"{cmd} 2>&1 | tee {shlex.quote(str(log))} | {me} _fmt; ec=$?; "
         f"echo $ec > {shlex.quote(str(exit_file))}; "
         "echo; echo \"[thrawn] task finished with exit $ec\"; exit $ec"
     )
@@ -610,16 +817,31 @@ def task_paths(repo: Path, run_id: str, task_id: str):
     return rdir / f"task-{task_id}.log", rdir / f"task-{task_id}.exit"
 
 
+def setup_worktree(repo: Path, cfg: dict, run_id: str, worktree: Path, tag: str) -> None:
+    """Optional per-repo setup after `git worktree add` (e.g. bundle install)."""
+    cmd = cfg.get("worktree", {}).get("setup", "")
+    if not cmd:
+        return
+    log = run_dir(repo, run_id) / f"setup-{tag}.log"
+    ok = stream_cmd(["bash", "-lc", cmd], worktree, log, label=f"setup {tag}: {cmd}")
+    if ok:
+        info(f"worktree {tag} ready ({cmd})")
+    else:
+        info(f"{YELLOW}worktree setup failed for {tag} (see {log}) — "
+             f"continuing, checks may catch it{RESET}")
+
+
 def spawn_task(repo, cfg, state, plan, task, spawner):
     run_id = state["run_id"]
     tid = task["id"]
     branch = f"thrawn/{run_id}/{tid}"
-    worktree = state_dir(repo) / "worktrees" / run_id / tid
+    worktree = worktree_base(repo) / run_id / tid
     worktree.parent.mkdir(parents=True, exist_ok=True)
     run(
         ["git", "worktree", "add", "-b", branch, str(worktree), state["base_commit"]],
         cwd=repo,
     )
+    setup_worktree(repo, cfg, run_id, worktree, tid)
 
     prompt = render(
         load_prompt("executor.md"),
@@ -668,6 +890,17 @@ def poll_tasks(repo: Path, state: dict) -> None:
                 code = int(exit_file.read_text().strip() or "1")
             except ValueError:
                 code = 1
+            if code == 0:
+                # exit 0 is not enough — the work must actually be ON the branch
+                proc = try_run(
+                    ["git", "rev-list", "--count",
+                     f"{state['base_commit']}..{ts['branch']}"],
+                    cwd=repo,
+                )
+                if proc and proc.returncode == 0 and proc.stdout.strip() == "0":
+                    code = 1
+                    ts["note"] = ("runner exited 0 but committed nothing — "
+                                  f"check for unstaged work in {ts['worktree']}")
             ts["status"] = "done" if code == 0 else "failed"
             ts["exit"] = code
             ts["finished"] = now_iso()
@@ -679,24 +912,85 @@ def deps_done(plan: dict, state: dict, task: dict) -> bool:
     )
 
 
-def render_board(state: dict, plan: dict) -> None:
-    print("\x1b[2J\x1b[H", end="")
+def render_plan(repo: Path, run_id: str, plan: dict, full: bool = False) -> None:
+    """Readable plan summary; full=True prints every prompt verbatim."""
+    print()
+    print(f"{BOLD}⚔ plan {run_id}{RESET}  {plan.get('summary', '')}")
+    print(f"  {DIM}branch:{RESET} {plan.get('branch', '')}")
+    print()
+    for task in plan["tasks"]:
+        deps = (f"  {DIM}(after {', '.join(task['deps'])}){RESET}"
+                if task.get("deps") else "")
+        print(f"  {BOLD}{task['id']:<3}{RESET} {task['title'][:56]:<56} "
+              f"{YELLOW}{task.get('runner', '?'):<6}{RESET} "
+              f"{DIM}{task.get('complexity', '?')}{RESET}{deps}")
+        if full:
+            print()
+            for ln in task.get("prompt", "").splitlines():
+                print(f"      {ln}")
+            print()
+            if task.get("checks"):
+                print(f"      {DIM}checks: {' · '.join(task['checks'])}{RESET}")
+            print(f"  {DIM}{'─' * 70}{RESET}")
+        else:
+            first = next(
+                (ln.strip() for ln in task.get("prompt", "").splitlines()
+                 if ln.strip()),
+                "",
+            )
+            if first:
+                print(f"      {DIM}{first[:90]}{RESET}")
+            if task.get("checks"):
+                print(f"      {DIM}checks: {' · '.join(task['checks'])}{RESET}")
+    print()
+    if plan.get("checks"):
+        print(f"  {DIM}integration checks:{RESET} {' · '.join(plan['checks'])}")
+    pr = plan.get("pr", {})
+    if pr.get("title"):
+        print(f"  {DIM}PR:{RESET} {pr['title']}")
+        if full and pr.get("body"):
+            for ln in pr["body"].splitlines():
+                print(f"      {DIM}{ln}{RESET}")
+    print()
+    print(f"  {DIM}full plan:{RESET} .thrawn/runs/{run_id}/plan.json")
+    print(f"  {DIM}execute:{RESET}   thrawn watch {run_id}")
+
+
+def render_board(repo: Path, state: dict, plan: dict, clear: bool = False) -> None:
+    if clear:
+        print("\x1b[2J\x1b[H", end="")
+    else:
+        print()
     print(f"{BOLD}⚔ thrawn{RESET} — {state['run_id']}  {DIM}{plan.get('summary','')[:60]}{RESET}")
     print(f"{DIM}phase: {state['phase']}   base: {state['base_branch']} @ {state['base_commit'][:8]}{RESET}")
     print()
     for task in plan["tasks"]:
-        ts = state["tasks"].get(task["id"], {"status": "pending"})
+        tid = task["id"]
+        ts = state["tasks"].get(tid, {"status": "pending"})
         icon = STATUS_ICON.get(ts["status"], "?")
         deps = f" {DIM}(after {','.join(task['deps'])}){RESET}" if task["deps"] else ""
         print(
-            f"  {icon} {task['id']:<4} {task['title'][:44]:<44} "
+            f"  {icon} {tid:<4} {task['title'][:44]:<44} "
             f"{DIM}{task.get('runner','?'):<7}{RESET} {ts['status']}{deps}"
         )
+        if ts.get("status") == "running":
+            log, _ = task_paths(repo, state["run_id"], tid)
+            act = describe_activity(log, 56)
+            print(f"       {YELLOW}{since(ts.get('started', ''))}{RESET} "
+                  f"{DIM}{act or 'no output yet'}{RESET}")
+        if ts.get("note"):
+            print(f"       {RED}{ts['note']}{RESET}")
     integ = state.get("integration", {})
     if integ:
         print()
-        print(f"  {DIM}integration:{RESET} {integ.get('status', 'pending')}"
-              + (f"  attempt {integ['attempt']}" if integ.get("attempt") else ""))
+        line = (f"  {DIM}integration:{RESET} {integ.get('status', 'pending')}"
+                + (f"  attempt {integ['attempt']}" if integ.get("attempt") else ""))
+        if state["phase"] == "integrating" and integ.get("stage_started"):
+            line += f"  {YELLOW}{since(integ['stage_started'])}{RESET}"
+        print(line)
+        if state["phase"] == "integrating" and integ.get("activity_log"):
+            act = describe_activity(Path(integ["activity_log"]), 60)
+            print(f"    {DIM}↳ {act or 'working — no output yet'}{RESET}")
     print()
     if state["phase"] == "green":
         print(f"  {GREEN}{BOLD}ALL GREEN{RESET}  ship code: {BOLD}{state['ship_code']}{RESET}")
@@ -704,13 +998,18 @@ def render_board(state: dict, plan: dict) -> None:
     elif state["phase"] == "failed":
         print(f"  {RED}{BOLD}FAILED{RESET} — see logs in .thrawn/runs/{state['run_id']}/")
         print(f"  {DIM}fix things, then: thrawn integrate {state['run_id']}{RESET}")
+    elif state["phase"] == "shipped":
+        print(f"  {GREEN}{BOLD}SHIPPED{RESET}  {state.get('pr_url', '')}")
+    elif state["phase"] in ("planned", "aborted"):
+        print(f"  {DIM}phase: {state['phase']}{RESET}")
     else:
         print(f"  {DIM}watching … ctrl-c is safe; resume with `thrawn watch {state['run_id']}`{RESET}")
 
 
 def watch(repo: Path, cfg: dict, state: dict) -> None:
     plan = json.loads((run_dir(repo, state["run_id"]) / "plan.json").read_text())
-    spawner = make_spawner()
+    spawner = make_spawner(state)
+    save_state(repo, state)
     poll = cfg["thrawn"]["poll_seconds"]
 
     while True:
@@ -720,7 +1019,7 @@ def watch(repo: Path, cfg: dict, state: dict) -> None:
             if ts is None and deps_done(plan, state, task):
                 spawn_task(repo, cfg, state, plan, task, spawner)
         save_state(repo, state)
-        render_board(state, plan)
+        render_board(repo, state, plan, clear=True)
 
         statuses = [
             state["tasks"].get(t["id"], {}).get("status", "pending")
@@ -733,7 +1032,7 @@ def watch(repo: Path, cfg: dict, state: dict) -> None:
             ]
             state["phase"] = "failed"
             save_state(repo, state)
-            render_board(state, plan)
+            render_board(repo, state, plan)
             notify(f"thrawn {state['run_id']}: task {','.join(failed)} failed", "request")
             die(f"task(s) failed: {', '.join(failed)} — logs in .thrawn/runs/{state['run_id']}/")
         if all(s == "done" for s in statuses):
@@ -780,16 +1079,59 @@ def run_integrator_agent(repo, cfg, state, worktree, mode, detail) -> bool:
     log = run_dir(repo, run_id) / f"integrator-{attempt}.log"
     exit_file = run_dir(repo, run_id) / f"integrator-{attempt}.exit"
     exit_file.unlink(missing_ok=True)
-    spawner = make_spawner()
+    state["integration"]["activity_log"] = str(log)
+    state["integration"]["stage_started"] = now_iso()
+    save_state(repo, state)
+    spawner = make_spawner(state)
+    save_state(repo, state)
     spawner.spawn(
         name=f"thrawn-{run_id}-integrator-{attempt}",
         label=f"⚔ integrator #{attempt}",
         cwd=worktree,
         cmdline=wrapped_cmdline(argv, log, exit_file),
     )
+    start = time.monotonic()
+    last_note = 0.0
     while not exit_file.exists():
+        elapsed = time.monotonic() - start
+        act = describe_activity(log, 50) or "working — no output yet"
+        if sys.stdout.isatty():
+            live(f"{YELLOW}◐{RESET} integrator #{attempt} [{mode}] "
+                 f"{YELLOW}{fmt_dur(elapsed)}{RESET} {DIM}{act}{RESET}")
+        elif elapsed - last_note >= 30:
+            info(f"integrator #{attempt} [{mode}] {fmt_dur(elapsed)} — {act}")
+            last_note = elapsed
         time.sleep(2)
-    return exit_file.read_text().strip() == "0"
+    live_done()
+    ok = exit_file.read_text().strip() == "0"
+    verdict = f"{GREEN}ok{RESET}" if ok else f"{RED}failed{RESET}"
+    info(f"integrator #{attempt} finished ({verdict}) "
+         f"after {fmt_dur(time.monotonic() - start)}")
+    return ok
+
+
+def baseline_check(repo: Path, cfg: dict, state: dict, cmd: str):
+    """Run a failed check against the base commit to assign blame.
+
+    True  = passes on base -> the merged changes broke it.
+    False = fails on base too -> pre-existing/environmental, not the feature.
+    None  = could not determine."""
+    run_id = state["run_id"]
+    worktree = worktree_base(repo) / run_id / "_baseline"
+    if not worktree.exists():
+        proc = try_run(
+            ["git", "worktree", "add", "--detach", str(worktree),
+             state["base_commit"]],
+            cwd=repo,
+        )
+        if proc is None or proc.returncode != 0:
+            return None
+        state["integration"]["baseline_worktree"] = str(worktree)
+        save_state(repo, state)
+        setup_worktree(repo, cfg, run_id, worktree, "baseline")
+    log = run_dir(repo, run_id) / "baseline-check.log"
+    info("triage: running the failed check against the base commit …")
+    return stream_cmd(["bash", "-lc", cmd], worktree, log, label=f"baseline: {cmd}")
 
 
 def integrate(repo: Path, cfg: dict, state: dict) -> None:
@@ -800,9 +1142,10 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
         "integration", {"status": "merging", "attempt": 0, "branch": plan["branch"]}
     )
     integ["status"] = "merging"
+    integ["stage_started"] = now_iso()
     save_state(repo, state)
 
-    worktree = state_dir(repo) / "worktrees" / run_id / "_integration"
+    worktree = worktree_base(repo) / run_id / "_integration"
     if not worktree.exists():
         proc = try_run(
             ["git", "worktree", "add", "-b", plan["branch"], str(worktree),
@@ -812,6 +1155,7 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
         if proc is None or proc.returncode != 0:
             # branch may exist from a previous attempt
             run(["git", "worktree", "add", str(worktree), plan["branch"]], cwd=repo)
+        setup_worktree(repo, cfg, run_id, worktree, "integration")
     integ["worktree"] = str(worktree)
 
     merged = set(integ.get("merged", []))
@@ -829,7 +1173,15 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
                 f"Merging branch `{branch}` (task {tid}: {task['title']}) hit "
                 f"conflicts.\n\ngit status:\n{status.stdout if status else '?'}"
             )
-            info(f"merge conflict on {tid} — dispatching integrator")
+            info(f"{RED}merge conflict on {tid}{RESET} (worktree: {worktree})")
+            if not (cfg["thrawn"]["auto_fix"] or confirm(
+                    f"dispatch an integrator agent to resolve the conflict on {tid}?")):
+                integ["status"] = "conflict-unresolved"
+                state["phase"] = "failed"
+                save_state(repo, state)
+                die(f"conflict on {tid} left untouched — resolve it manually in "
+                    f"{worktree}, or rerun `thrawn integrate {run_id}` and consent "
+                    f"to the agent (auto_fix = true skips the question)")
             ok = run_integrator_agent(repo, cfg, state, worktree, "conflict", detail)
             unmerged = try_run(["git", "ls-files", "-u"], cwd=worktree)
             if not ok or (unmerged and unmerged.stdout.strip()):
@@ -844,18 +1196,62 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
 
     # checks
     checks = detect_checks(repo, cfg, plan)
+    if not checks and not cfg["thrawn"]["allow_no_checks"]:
+        integ["status"] = "no-checks"
+        state["phase"] = "failed"
+        save_state(repo, state)
+        die("no checks configured (plan, [checks] in .thrawn.toml, or Makefile) "
+            "— refusing to declare a run green without verification. Add check "
+            "commands, or set allow_no_checks = true to accept that risk.")
     integ["checks"] = checks
     max_attempts = cfg["thrawn"]["integrator_attempts"]
     while True:
         integ["status"] = "checking"
+        integ["stage_started"] = now_iso()
         save_state(repo, state)
         failed_output = None
-        for cmd in checks:
-            info(f"running check: {cmd}")
-            proc = try_run(["bash", "-lc", cmd], cwd=worktree, timeout=1800)
-            if proc is None or proc.returncode != 0:
-                out = ((proc.stdout or "") + "\n" + (proc.stderr or "")) if proc else ""
+        for i, cmd in enumerate(checks):
+            check_log = run_dir(repo, run_id) / f"check-{integ['attempt']}-{i}.log"
+            integ["activity_log"] = str(check_log)
+            save_state(repo, state)
+            info(f"running check: {BOLD}{cmd}{RESET}")
+            check_start = time.monotonic()
+            ok = stream_cmd(["bash", "-lc", cmd], worktree, check_log,
+                            label=f"check: {cmd}", echo=True)
+            took = fmt_dur(time.monotonic() - check_start)
+            if ok:
+                info(f"{GREEN}✓ {cmd}{RESET} ({took})")
+            else:
+                info(f"{RED}✗ {cmd}{RESET} ({took}) — full output above "
+                     f"and in {check_log}")
+            if not ok:
+                out = check_log.read_text() if check_log.exists() else ""
                 failed_output = f"$ {cmd}\n{out.strip()[-4000:]}"
+                base_ok = baseline_check(repo, cfg, state, cmd)
+                if base_ok is False:
+                    info(f"{YELLOW}triage: check fails on the base commit too — "
+                         f"pre-existing/environmental, not the merged changes{RESET}")
+                    failed_output += (
+                        "\n\nTRIAGE: this check FAILS ON THE BASE COMMIT TOO. "
+                        "The failure is pre-existing or environmental — it was NOT "
+                        "caused by the merged changes. Fix the environment or the "
+                        "pre-existing issue; do not rework the feature code. If only "
+                        "a human can fix it (permissions, credentials, installs), "
+                        "state exactly what they must run and exit non-zero."
+                    )
+                elif base_ok is True:
+                    failed_output += (
+                        "\n\nTRIAGE: this check passes on the base commit — the "
+                        "failure was introduced by the merged changes."
+                    )
+                else:
+                    info(f"{YELLOW}triage inconclusive — could not run the check "
+                         f"against the base commit{RESET}")
+                    failed_output += (
+                        "\n\nTRIAGE: inconclusive — the check could not be run "
+                        "against the base commit. Establish whether the failure "
+                        "is pre-existing before changing feature code."
+                    )
                 break
         if failed_output is None:
             break
@@ -867,9 +1263,18 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
             notify(f"thrawn {run_id}: checks failing", "request")
             die(f"checks still failing after {max_attempts} fix attempts "
                 f"(worktree: {worktree})")
+        if not (cfg["thrawn"]["auto_fix"] or confirm(
+                f"dispatch an integrator agent to fix this (attempt {integ['attempt']})?")):
+            integ["status"] = "checks-failing"
+            state["phase"] = "failed"
+            save_state(repo, state)
+            die(f"checks failing, no agent dispatched — full output above and in "
+                f".thrawn/runs/{run_id}/. Fix manually in {worktree}, or rerun "
+                f"`thrawn integrate {run_id}` and consent to the agent "
+                f"(auto_fix = true skips the question)")
         integ["status"] = f"fixing (attempt {integ['attempt']})"
         save_state(repo, state)
-        info(f"checks failed — dispatching integrator (attempt {integ['attempt']})")
+        info(f"dispatching integrator (attempt {integ['attempt']})")
         run_integrator_agent(
             repo, cfg, state, worktree, "checks",
             f"These checks failed:\n\n{failed_output}",
@@ -879,8 +1284,9 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
     state["phase"] = "green"
     state["ship_code"] = f"{secrets.randbelow(10**6):06d}"
     save_state(repo, state)
-    notify(f"thrawn {run_id}: ALL GREEN — ready to ship", "done")
-    render_board(state, plan)
+    notify(f"thrawn {run_id}: ALL GREEN — thrawn ship {run_id} "
+           f"--code {state['ship_code']}", "done")
+    render_board(repo, state, plan)
 
 
 # ---------------------------------------------------------------------------
@@ -941,6 +1347,21 @@ def ship(repo: Path, cfg: dict, run_id: str, code) -> None:
             try_run(["gh", "issue", "comment", state["target"]["ref"],
                      "--body", f"⚔ thrawn shipped this: {url}"], cwd=repo)
 
+    # the worktrees' purpose ends at ship — release the branch so a normal
+    # `git checkout <branch>` works in the main checkout again
+    for ts in state["tasks"].values():
+        wt = ts.get("worktree")
+        if wt and Path(wt).exists():
+            try_run(["git", "worktree", "remove", "--force", wt], cwd=repo)
+        if ts.get("branch"):
+            try_run(["git", "branch", "-D", ts["branch"]], cwd=repo)
+    if worktree.exists():
+        proc = try_run(["git", "worktree", "remove", str(worktree)], cwd=repo)
+        if proc and proc.returncode == 0:
+            info(f"released {BOLD}{branch}{RESET} — "
+                 f"`git checkout {branch}` now works in your checkout")
+        else:
+            info(f"{YELLOW}kept worktree (uncommitted changes?): {worktree}{RESET}")
     state["phase"] = "shipped"
     state["pr_url"] = url
     state["shipped"] = now_iso()
@@ -958,7 +1379,7 @@ def cmd_status(repo: Path, run_id) -> None:
     if plan_path.exists():
         poll_tasks(repo, state)
         save_state(repo, state)
-        render_board(state, json.loads(plan_path.read_text()))
+        render_board(repo, state, json.loads(plan_path.read_text()))
     else:
         print(json.dumps(state, indent=2))
 
@@ -989,8 +1410,11 @@ def cmd_abort(repo: Path, run_id) -> None:
         if ts.get("branch"):
             try_run(["git", "branch", "-D", ts["branch"]], cwd=repo)
     integ = state.get("integration", {})
-    if integ.get("worktree") and Path(integ["worktree"]).exists():
-        try_run(["git", "worktree", "remove", "--force", integ["worktree"]], cwd=repo)
+    for key in ("worktree", "baseline_worktree"):
+        if integ.get(key) and Path(integ[key]).exists():
+            try_run(["git", "worktree", "remove", "--force", integ[key]], cwd=repo)
+    if state.get("herdr_workspace"):
+        try_run(["herdr", "workspace", "close", state["herdr_workspace"]], timeout=5)
     state["phase"] = "aborted"
     save_state(repo, state)
     info(f"aborted {state['run_id']} — worktrees removed, task branches deleted")
@@ -1028,8 +1452,7 @@ def dispatch(repo: Path, cfg: dict, target, plan_only: bool) -> None:
     if plan_only:
         state["phase"] = "planned"
         save_state(repo, state)
-        print(json.dumps(plan, indent=2))
-        info(f"planned only — execute with: thrawn watch {run_id}")
+        render_plan(repo, run_id, plan)
         return
 
     state["phase"] = "working"
@@ -1047,6 +1470,9 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
   thrawn <brief.md>            dispatch from a markdown brief
   thrawn                       dispatch from ./THRAWN.md
   thrawn plan <target>         plan only (review before executing)
+  thrawn plan <run>            re-show the saved plan of an existing run
+  thrawn plan <run> --full     the whole plan: every prompt verbatim, PR body
+  thrawn plan <run> --again    unhappy with it? re-run the planner fresh
   thrawn recon                 cache a codebase brief (faster/cheaper planning)
   thrawn watch [run]           resume/execute a run
   thrawn status [run]          show the board (and ship code when green)
@@ -1057,8 +1483,46 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
 """
 
 
+def cmd_fmt() -> None:
+    """Hidden: render claude stream-json from stdin as readable pane output.
+
+    The raw JSONL still lands in the task log (tee runs before us) — this is
+    purely so a herdr pane shows what the agent is doing, not JSON soup.
+    Non-JSON lines (codex, plain runners) pass through untouched."""
+    for line in sys.stdin:
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            if stripped:
+                print(stripped, flush=True)
+            continue
+        try:
+            evt = json.loads(stripped)
+        except json.JSONDecodeError:
+            print(stripped, flush=True)
+            continue
+        etype = evt.get("type")
+        if etype == "system" and evt.get("subtype") == "init":
+            print(f"· session started ({evt.get('model', '?')})", flush=True)
+        elif etype == "assistant":
+            for block in (evt.get("message") or {}).get("content", []):
+                if block.get("type") == "text" and block.get("text", "").strip():
+                    print(block["text"].strip(), flush=True)
+                elif block.get("type") == "tool_use":
+                    arg = block.get("input") or {}
+                    hint = (arg.get("description") or arg.get("command")
+                            or arg.get("file_path") or arg.get("pattern") or "")
+                    name = block.get("name", "tool")
+                    print(f"▸ {name}: {hint[:120]}" if hint else f"▸ {name}",
+                          flush=True)
+        elif etype == "result":
+            print(f"■ result: {evt.get('subtype', 'done')}", flush=True)
+
+
 def main() -> None:
     args = sys.argv[1:]
+    if args and args[0] == "_fmt":
+        cmd_fmt()
+        return
     if args and args[0] in ("-h", "--help", "help"):
         print(USAGE)
         return
@@ -1070,7 +1534,35 @@ def main() -> None:
     if sub == "recon":
         cmd_recon(repo, cfg)
     elif sub == "plan":
-        dispatch(repo, cfg, args[1] if len(args) > 1 else None, plan_only=True)
+        flags = [a for a in args[1:] if a.startswith("--")]
+        rest = [a for a in args[1:] if not a.startswith("--")]
+        target = rest[0] if rest else None
+        again = "--again" in flags
+        full = "--full" in flags
+        if target and run_dir(repo, target).exists():
+            state = load_state(repo, target)
+            if again:
+                # unhappy with the plan -> re-run the planner on the original
+                # target and overwrite plan.json (only before execution starts)
+                if state["phase"] not in ("planning", "planned"):
+                    die(f"run {target} is {state['phase']} — re-planning after "
+                        f"execution has started would orphan running work")
+                tgt = state["target"]
+                intake = (fetch_issue(repo, tgt["ref"])
+                          if tgt["kind"] in ("github", "gitlab")
+                          else read_brief(Path(tgt["ref"])))
+                info(f"re-planning {target} from {tgt['kind']} {tgt['ref']} …")
+                plan = run_planner(repo, cfg, intake, target)
+                render_plan(repo, target, plan, full=full)
+            else:
+                # existing run id -> show its saved plan, don't re-plan
+                plan_path = run_dir(repo, target) / "plan.json"
+                if not plan_path.exists():
+                    die(f"run {target} has no plan.json")
+                render_plan(repo, target,
+                            json.loads(plan_path.read_text()), full=full)
+        else:
+            dispatch(repo, cfg, target, plan_only=True)
     elif sub == "watch":
         state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)
         if state["phase"] in ("shipped", "aborted"):

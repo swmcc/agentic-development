@@ -35,3 +35,8 @@ Sibling tasks (context only — do NOT do their work):
    a file called `THRAWN-BLOCKED.md`, commit it, and exit non-zero.
 
 Exit when your commits are in place and `git status` is clean.
+
+VERIFICATION: thrawn checks that commits exist on `{{branch}}` after you
+exit. Exit 0 with no commits is recorded as a FAILED task — your words
+don't count, only commits on the branch do. Before exiting, run
+`git log --oneline -1` and confirm your commit is there.

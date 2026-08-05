@@ -15,11 +15,19 @@ poll_seconds = 2
 recon_runner = ""             # empty = use the planner runner
 recon_max_age_commits = 50    # staleness threshold for the cached repo brief
 auto_recon = true             # dispatch runs recon first when no cache exists
+auto_fix = false              # ask before dispatching integrator agents (no silent fixing)
+allow_no_checks = false       # never declare green with zero checks configured
 
 [checks]
 # Ran in the integration worktree after merging. Empty = auto-detect from
 # Makefile (check -> lint+test). Override per-repo in <repo>/.thrawn.toml.
 commands = []
+
+[worktree]
+# Ran inside every fresh worktree (tasks + integration) right after
+# `git worktree add`. Use for dependency install so checks don't fail on a
+# cold tree, e.g. per-repo in .thrawn.toml:  setup = "bundle install"
+setup = ""
 
 # --- planner (read-only, never edits) --------------------------------------
 
@@ -30,11 +38,13 @@ notes = "internal — planning only"
 # --- workers ---------------------------------------------------------------
 
 [runners.opus]
-argv = ["claude", "--model", "opus", "-p", "{prompt}", "--dangerously-skip-permissions"]
+# stream-json + verbose: events stream to the task log as they happen,
+# so `thrawn watch`/`status` can show live activity (plain -p buffers until exit)
+argv = ["claude", "--model", "opus", "-p", "{prompt}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
 notes = "strongest executor; architectural work, tricky refactors, anything touching many files or requiring judgement"
 
 [runners.haiku]
-argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-permissions"]
+argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
 notes = "fast + cheap; mechanical edits, templates, config changes, docs, small well-specified functions"
 
 [runners.codex]
