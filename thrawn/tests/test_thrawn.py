@@ -256,6 +256,17 @@ class TestDetectChecks:
         assert T.detect_checks(repo, base_cfg(T), {}) == []
 
 
+class TestSpawner:
+    def test_no_herdr_falls_back_to_local(self, T, tmp_path, monkeypatch):
+        monkeypatch.setenv("THRAWN_NO_HERDR", "1")
+        spawner = T.make_spawner(tmp_path, {"run_id": "r1"})
+        assert isinstance(spawner, T.LocalSpawner)
+
+    def test_herdr_spawner_needs_run_id_for_tab(self, T):
+        # no state/run_id → no run tab; spawn would fall through tab-less
+        assert T.HerdrSpawner()._run_tab() is None
+
+
 # ---------------------------------------------------------------------------
 # The ship gate — guards (no git needed; guards fire before any git call)
 # ---------------------------------------------------------------------------

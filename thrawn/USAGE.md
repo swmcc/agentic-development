@@ -104,9 +104,9 @@ What just happened:
 - Each task got its own **git worktree** branched from the same commit
   (`.thrawn/worktrees/gh-42/t1`, `…/t2`), so agents can't tread on each
   other or on your working copy
-- Each got its own **herdr tab** (`⚔ t1 Export endpoint…`) streaming the
-  agent's output live — click in if you're curious, herdr's working/idle
-  dots track each one
+- The run got one **herdr tab** (`⚔ gh-42`) with a stacked pane per agent
+  (`t1 Export endpoint…`) streaming output live — click in if you're
+  curious, herdr's working/idle dots track each pane
 - t1 and t2 run **in parallel**; t3 waits for t1 because the plan said so
 
 Meanwhile you keep working in your own pane on whatever you like — the run
@@ -122,7 +122,7 @@ Two things can interrupt the cruise:
 
 - **Merge conflict** → an integrator agent is dispatched into the
   integration worktree to combine both sides (it knows both branches were
-  parts of the same feature). You'll see it as another herdr tab.
+  parts of the same feature). You'll see it as another pane in the run tab.
 - **Checks fail** → the integrator gets the failing output and fixes the
   root cause, then re-runs the checks. Two strikes and thrawn stops and
   hands it to you instead of thrashing.

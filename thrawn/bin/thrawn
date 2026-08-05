@@ -692,59 +692,59 @@ def _first_match(pattern: str, text: str):
     return m.group(1) if m else None
 
 
-def ensure_herdr_workspace(state: dict):
-    """Create (or reuse) a dedicated herdr workspace for this run.
-
-    Every agent of the run — tasks and integrators — lands in it as a
-    labeled tab, so the whole run is visible in one place regardless of
-    where thrawn was launched from."""
-    if not herdr_available():
-        return None
-    ws = state.get("herdr_workspace")
-    if ws:
-        proc = try_run(["herdr", "workspace", "get", ws], timeout=5)
-        if proc and proc.returncode == 0:
-            return ws
-    proc = try_run(
-        ["herdr", "workspace", "create", "--label", f"⚔ {state['run_id']}",
-         "--no-focus"],
-        timeout=10,
-    )
-    ws = _first_match(
-        r'"workspace_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
-    )
-    if ws:
-        state["herdr_workspace"] = ws
-        info(f"herdr workspace {BOLD}⚔ {state['run_id']}{RESET} — agents appear there")
-    return ws
-
-
 class HerdrSpawner:
-    """One labeled tab per agent in the run's dedicated workspace."""
+    """One ⚔ tab per run in the workspace thrawn was launched from; every
+    agent of the run — tasks and integrators — stacks as a split pane
+    inside it, so the whole run is visible on one screen."""
 
-    def __init__(self, workspace=None):
-        self.workspace = workspace
-        if not self.workspace:
-            proc = try_run(["herdr", "pane", "current"], timeout=5)
-            out = (proc.stdout if proc else "") or ""
-            self.workspace = _first_match(r'"workspace_id"\s*:\s*"([^"]+)"', out)
+    def __init__(self, repo=None, state=None):
+        self.repo = repo
+        self.state = state if state is not None else {}
+        self._fresh = False  # just created the tab; first agent takes root pane
+
+    def _run_tab(self):
+        """Find (or create) this run's tab; returns its id, or None."""
+        tab = self.state.get("herdr_tab")
+        if tab:
+            proc = try_run(["herdr", "tab", "get", tab], timeout=5)
+            if proc and proc.returncode == 0:
+                return tab
+            self.state["herdr_tab"] = None  # tab was closed — recreate
+        run_id = self.state.get("run_id")
+        if not run_id:
+            return None
+        proc = try_run(["herdr", "pane", "current"], timeout=5)
+        workspace = _first_match(
+            r'"workspace_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
+        )
+        if not workspace:
+            return None
+        proc = try_run(
+            ["herdr", "tab", "create", "--workspace", workspace,
+             "--label", f"⚔ {run_id}", "--no-focus"],
+            timeout=10,
+        )
+        tab = _first_match(
+            r'"tab_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
+        )
+        if tab:
+            self._fresh = True
+            self.state["herdr_tab"] = tab
+            if self.repo is not None:
+                save_state(self.repo, self.state)
+            info(f"herdr tab {BOLD}⚔ {run_id}{RESET} — agents stack there as panes")
+        return tab
 
     def spawn(self, name, label, cwd, cmdline):
-        tab_id = None
-        if self.workspace:
-            proc = try_run(
-                ["herdr", "tab", "create", "--workspace", self.workspace,
-                 "--label", label],
-                timeout=10,
-            )
-            tab_id = _first_match(
-                r'"tab_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
-            )
+        tab = self._run_tab()
         argv = ["herdr", "agent", "start", name, "--cwd", str(cwd), "--no-focus"]
-        if tab_id:
-            argv += ["--tab", tab_id]
-        elif self.workspace:
-            argv += ["--workspace", self.workspace]
+        if tab:
+            argv += ["--tab", tab]
+            if not self._fresh:
+                # the fresh tab's root pane takes the first agent;
+                # everyone after that stacks below it
+                argv += ["--split", "down"]
+            self._fresh = False
         argv += ["--", "bash", "-lc", cmdline]
         proc = try_run(argv, timeout=15)
         out = ((proc.stdout or "") + (proc.stderr or "")) if proc else ""
@@ -753,7 +753,9 @@ class HerdrSpawner:
             info(f"{YELLOW}herdr refused to open a pane for {label} — running "
                  f"headless; output only in the run logs{RESET}")
             return LocalSpawner().spawn(name, label, cwd, cmdline)
-        return {"via": "herdr", "pane": pane, "tab": tab_id}
+        if pane:
+            try_run(["herdr", "pane", "rename", pane, label], timeout=5)
+        return {"via": "herdr", "pane": pane, "tab": tab}
 
     def close(self, handle):
         if handle.get("via") == "herdr" and handle.get("pane"):
@@ -785,11 +787,10 @@ class LocalSpawner:
                 pass
 
 
-def make_spawner(state=None):
+def make_spawner(repo=None, state=None):
     if not herdr_available():
         return LocalSpawner()
-    ws = ensure_herdr_workspace(state) if state is not None else None
-    return HerdrSpawner(ws)
+    return HerdrSpawner(repo, state)
 
 
 def notify(title: str, sound: str = "done") -> None:
@@ -1008,8 +1009,7 @@ def render_board(repo: Path, state: dict, plan: dict, clear: bool = False) -> No
 
 def watch(repo: Path, cfg: dict, state: dict) -> None:
     plan = json.loads((run_dir(repo, state["run_id"]) / "plan.json").read_text())
-    spawner = make_spawner(state)
-    save_state(repo, state)
+    spawner = make_spawner(repo, state)
     poll = cfg["thrawn"]["poll_seconds"]
 
     while True:
@@ -1082,8 +1082,7 @@ def run_integrator_agent(repo, cfg, state, worktree, mode, detail) -> bool:
     state["integration"]["activity_log"] = str(log)
     state["integration"]["stage_started"] = now_iso()
     save_state(repo, state)
-    spawner = make_spawner(state)
-    save_state(repo, state)
+    spawner = make_spawner(repo, state)
     spawner.spawn(
         name=f"thrawn-{run_id}-integrator-{attempt}",
         label=f"⚔ integrator #{attempt}",
@@ -1413,8 +1412,8 @@ def cmd_abort(repo: Path, run_id) -> None:
     for key in ("worktree", "baseline_worktree"):
         if integ.get(key) and Path(integ[key]).exists():
             try_run(["git", "worktree", "remove", "--force", integ[key]], cwd=repo)
-    if state.get("herdr_workspace"):
-        try_run(["herdr", "workspace", "close", state["herdr_workspace"]], timeout=5)
+    if state.get("herdr_tab"):
+        try_run(["herdr", "tab", "close", state["herdr_tab"]], timeout=5)
     state["phase"] = "aborted"
     save_state(repo, state)
     info(f"aborted {state['run_id']} — worktrees removed, task branches deleted")

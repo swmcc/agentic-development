@@ -125,7 +125,7 @@ context, constraints, routing hints, out-of-scope.
 | Channel | What you see |
 |---------|--------------|
 | **The board** | The dispatch pane becomes a live status board: one line per task with runner + state (`○ pending ◐ running ● done ✖ failed`), integration progress, and the ship code when green. Also on demand via `thrawn status`. |
-| **Herdr tabs** | Every worker gets its own tab (`⚔ t1 …`) streaming the agent's full output live. Herdr's own working/idle indicators apply to each pane. |
+| **The run tab** | Each run gets one tab (`⚔ gh-123`) in the workspace you dispatched from, with a stacked pane per agent — workers and integrators side by side, streaming live. Herdr's working/idle indicators apply to each pane. |
 | **Notifications** | `herdr notification show` fires on the big transitions: task failure, checks failing, ALL GREEN, shipped. |
 | **Logs** | Everything is tee'd to `.thrawn/runs/<run>/` — `task-*.log`, `integrator-*.log`, `planner-raw.txt` — so nothing is lost when a pane closes. |
 | **State** | `state.json` per run is the source of truth (`thrawn runs` summarises it). |
