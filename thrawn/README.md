@@ -46,6 +46,9 @@ make setup-thrawn     # symlinks bin/thrawn into ~/.local/bin
 Requires: `python3` ≥ 3.11, `git`, `claude` CLI. Optional: `herdr` (panes),
 `gh`/`glab` (tickets + PRs), `codex`, `pi`, `ollama` (extra runners).
 
+Tests: `make test` (pytest; uses fake runners + a local bare origin, no real
+agents or network). `make lint` runs ruff.
+
 ## Usage
 
 **New to thrawn? Read the [User Guide](USAGE.md)** — one scenario walked

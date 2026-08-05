@@ -127,6 +127,20 @@ setup-thrawn: ## Install the thrawn orchestrator CLI
 	esac
 
 # ============================================================================
+# 🧪 Testing
+# ============================================================================
+
+.PHONY: test
+test: ## Run the thrawn test suite (pytest)
+	@echo "$(GREEN)Running thrawn tests...$(RESET)"
+	@python3 -m pytest thrawn/tests -q --basetemp=.pytest-tmp
+
+.PHONY: lint
+lint: ## Lint thrawn with ruff
+	@echo "$(GREEN)Linting thrawn...$(RESET)"
+	@ruff check thrawn/bin/thrawn thrawn/tests
+
+# ============================================================================
 # 🔄 Updates
 # ============================================================================
 
