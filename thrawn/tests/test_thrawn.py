@@ -11,6 +11,7 @@ import importlib.util
 import json
 import shutil
 import subprocess
+import time
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 from types import SimpleNamespace
@@ -357,6 +358,51 @@ class TestRunReuse:
 
 
 # ---------------------------------------------------------------------------
+# retry / adopt — guards (no git needed; guards fire before any git call)
+# ---------------------------------------------------------------------------
+
+class TestRecoveryGuards:
+    def test_retry_shipped_run_refused(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="shipped")
+        with pytest.raises(SystemExit):
+            T.cmd_retry(tmp_path, base_cfg(T), "r1", [])
+
+    def test_retry_green_run_refused(self, T, tmp_path):
+        seed_state(T, tmp_path)  # green, nothing failed
+        with pytest.raises(SystemExit):
+            T.cmd_retry(tmp_path, base_cfg(T), "r1", [])
+
+    def test_retry_unknown_task_refused(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="failed",
+                   tasks={"t1": {"status": "failed"}})
+        with pytest.raises(SystemExit):
+            T.cmd_retry(tmp_path, base_cfg(T), "r1", ["nope"])
+
+    def test_retry_healthy_task_refused(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="failed",
+                   tasks={"t1": {"status": "done"}, "t2": {"status": "failed"}})
+        with pytest.raises(SystemExit):
+            T.cmd_retry(tmp_path, base_cfg(T), "r1", ["t1"])
+
+    def test_retry_unknown_runner_refused(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="failed",
+                   tasks={"t1": {"status": "failed"}})
+        with pytest.raises(SystemExit):
+            T.cmd_retry(tmp_path, base_cfg(T), "r1", [], runner="gpt9000")
+
+    def test_adopt_nothing_failed_refused(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="failed")
+        with pytest.raises(SystemExit):
+            T.cmd_adopt(tmp_path, base_cfg(T), "r1", [])
+
+    def test_adopt_without_worktree_refused(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="failed",
+                   tasks={"t1": {"status": "failed"}})
+        with pytest.raises(SystemExit):
+            T.cmd_adopt(tmp_path, base_cfg(T), "r1", ["t1"])
+
+
+# ---------------------------------------------------------------------------
 # E2E — fake runners, real worktrees/merges, then ship to a local bare origin
 # ---------------------------------------------------------------------------
 
@@ -470,3 +516,115 @@ class TestEndToEnd:
             assert not Path(ts["worktree"]).exists()
         branches = g("branch", "--list", "thrawn/*/*", cwd=e2e.repo).stdout
         assert branches.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# E2E recovery — a run with casualties, healed by adopt + retry --runner
+# ---------------------------------------------------------------------------
+
+RECOVERY_TOML = """\
+[thrawn]
+planner = "fakeplan"
+integrator = "fakework"
+default_runner = "fakework"
+allowed_runners = ["fakework", "fakefail", "fakeshy"]
+poll_seconds = 0
+auto_recon = false
+
+[runners.fakeplan]
+argv = ["cat", "plan-fixture.json"]
+
+[runners.fakework]
+argv = ["bash", "-c", "f=$(git branch --show-current | tr '/' '-'); echo hi > $f.txt; git add $f.txt; git commit -q -m 'test work'"]
+
+[runners.fakefail]
+argv = ["bash", "-c", "exit 1"]
+
+[runners.fakeshy]
+argv = ["bash", "-c", "echo salvage me > shy.txt"]
+"""
+
+RECOVERY_PLAN = {
+    "summary": "recovery e2e",
+    "branch": "thrawn/recovery",
+    "tasks": [
+        {"id": "t1", "title": "good worker", "complexity": "low",
+         "runner": "fakework", "deps": [], "prompt": "do t1"},
+        {"id": "t2", "title": "hard fail", "complexity": "low",
+         "runner": "fakefail", "deps": [], "prompt": "do t2"},
+        {"id": "t3", "title": "works but never commits", "complexity": "low",
+         "runner": "fakeshy", "deps": [], "prompt": "do t3"},
+    ],
+    "checks": ["true"],
+    "pr": {"title": "recovery", "body": "recovery"},
+}
+
+
+@pytest.fixture(scope="module")
+def rec(T, tmp_path_factory):
+    """A failed run: t2 hard-fails, t3 does the work but never commits."""
+    mp = pytest.MonkeyPatch()
+    mp.setenv("THRAWN_NO_HERDR", "1")
+    root = tmp_path_factory.mktemp("recovery")
+    repo = init_repo(root / "repo")
+    (repo / ".thrawn.toml").write_text(RECOVERY_TOML)
+    (repo / "plan-fixture.json").write_text(json.dumps(RECOVERY_PLAN))
+    (repo / "THRAWN.md").write_text("# Recovery test brief\n")
+    cfg = T.load_config(repo)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
+    with pytest.raises(SystemExit):  # watch dies when failures land
+        T.dispatch(repo, cfg, None, plan_only=False)
+    state = T.latest_run(repo)
+    # watch bails at the first failure it sees; wait for the stragglers'
+    # exit files so every task has settled before tests poke at the run
+    for _ in range(100):
+        T.poll_tasks(repo, state)
+        if all(ts["status"] != "running" for ts in state["tasks"].values()):
+            break
+        time.sleep(0.05)
+    T.save_state(repo, state)
+    yield SimpleNamespace(repo=repo, cfg=cfg, state=state)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
+    mp.undo()
+
+
+class TestRecoveryEndToEnd:
+    def test_run_failed_with_two_casualties(self, rec):
+        assert rec.state["phase"] == "failed"
+        assert rec.state["tasks"]["t1"]["status"] == "done"
+        assert rec.state["tasks"]["t2"]["status"] == "failed"
+        # exit 0 but no commits counts as failed, with the salvage note
+        assert rec.state["tasks"]["t3"]["status"] == "failed"
+        assert "committed nothing" in rec.state["tasks"]["t3"]["note"]
+
+    def test_retry_refuses_to_discard_uncommitted_work(self, T, rec):
+        with pytest.raises(SystemExit):
+            T.cmd_retry(rec.repo, rec.cfg, rec.state["run_id"], ["t3"])
+        wt = Path(rec.state["tasks"]["t3"]["worktree"])
+        assert (wt / "shy.txt").exists()  # the work survived
+
+    def test_adopt_commits_the_leftover_work(self, T, rec):
+        rid = rec.state["run_id"]
+        with pytest.raises(SystemExit):  # t2 still failed → watch dies again
+            T.cmd_adopt(rec.repo, rec.cfg, rid, ["t3"])
+        after = T.load_state(rec.repo, rid)
+        assert after["tasks"]["t3"]["status"] == "done"
+        branch = after["tasks"]["t3"]["branch"]
+        count = g("rev-list", "--count", f"{after['base_commit']}..{branch}",
+                  cwd=rec.repo).stdout.strip()
+        assert count == "1"
+
+    def test_retry_reroutes_and_goes_green(self, T, rec):
+        rid = rec.state["run_id"]
+        T.cmd_retry(rec.repo, rec.cfg, rid, ["t2"], runner="fakework")
+        after = T.load_state(rec.repo, rid)
+        assert after["phase"] == "green"
+        assert after["tasks"]["t2"]["status"] == "done"
+        assert len(after["ship_code"]) == 6
+        plan = json.loads((T.run_dir(rec.repo, rid) / "plan.json").read_text())
+        t2 = next(t for t in plan["tasks"] if t["id"] == "t2")
+        assert t2["runner"] == "fakework"  # reroute recorded in the plan
+        # all three branches made it into the integration worktree
+        wt = Path(after["integration"]["worktree"])
+        assert (wt / "shy.txt").exists()
+        assert (wt / f"thrawn-{rid}-t2.txt").exists()

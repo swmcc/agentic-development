@@ -64,6 +64,8 @@ thrawn recon                     # cache a codebase brief (faster/cheaper planni
 thrawn watch gh-123              # execute a planned run / resume watching
 thrawn status                    # the board (shows ship code when green)
 thrawn ship gh-123 --code 482913 # push + open PR/MR
+thrawn retry gh-123 [t2] [--runner opus]  # rerun failed tasks (reroute optional)
+thrawn adopt gh-123 t2           # accept work a failed task left uncommitted
 thrawn integrate gh-123          # retry merge/checks after a failure
 thrawn runs                      # list runs in this repo
 thrawn abort gh-123              # kill agents, delete worktrees + branches

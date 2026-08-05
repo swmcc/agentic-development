@@ -801,10 +801,12 @@ def notify(title: str, sound: str = "done") -> None:
 def wrapped_cmdline(argv, log: Path, exit_file: Path) -> str:
     cmd = " ".join(shlex.quote(a) for a in argv)
     me = shlex.quote(str(Path(__file__).resolve()))
+    ef = shlex.quote(str(exit_file))
     return (
         "set -o pipefail; "
         f"{cmd} 2>&1 | tee {shlex.quote(str(log))} | {me} _fmt; ec=$?; "
-        f"echo $ec > {shlex.quote(str(exit_file))}; "
+        # write-then-rename so pollers never observe a half-written file
+        f"echo $ec > {ef}.tmp && mv {ef}.tmp {ef}; "
         "echo; echo \"[thrawn] task finished with exit $ec\"; exit $ec"
     )
 
@@ -887,8 +889,11 @@ def poll_tasks(repo: Path, state: dict) -> None:
             continue
         _, exit_file = task_paths(repo, state["run_id"], tid)
         if exit_file.exists():
+            raw = exit_file.read_text().strip()
+            if not raw:
+                continue  # still being written — pick it up next poll
             try:
-                code = int(exit_file.read_text().strip() or "1")
+                code = int(raw)
             except ValueError:
                 code = 1
             if code == 0:
@@ -1034,7 +1039,11 @@ def watch(repo: Path, cfg: dict, state: dict) -> None:
             save_state(repo, state)
             render_board(repo, state, plan)
             notify(f"thrawn {state['run_id']}: task {','.join(failed)} failed", "request")
-            die(f"task(s) failed: {', '.join(failed)} — logs in .thrawn/runs/{state['run_id']}/")
+            die(f"task(s) failed: {', '.join(failed)} — logs in "
+                f".thrawn/runs/{state['run_id']}/\n"
+                f"  `thrawn retry {state['run_id']}` reruns them "
+                f"(--runner X to reroute); `thrawn adopt {state['run_id']} <task>` "
+                f"takes work an agent left uncommitted")
         if all(s == "done" for s in statuses):
             break
         time.sleep(poll)
@@ -1419,6 +1428,119 @@ def cmd_abort(repo: Path, run_id) -> None:
     info(f"aborted {state['run_id']} — worktrees removed, task branches deleted")
 
 
+def _recovery_targets(state: dict, task_ids, verb: str):
+    """Validate task ids for retry/adopt; default to everything failed."""
+    failed = [t for t, ts in state["tasks"].items() if ts.get("status") == "failed"]
+    if not task_ids:
+        return failed
+    unknown = [t for t in task_ids if t not in state["tasks"]]
+    if unknown:
+        die(f"no such task(s) in {state['run_id']}: {', '.join(unknown)}")
+    healthy = [t for t in task_ids if t not in failed]
+    if healthy:
+        die(f"can only {verb} failed tasks — not "
+            + ", ".join(f"{t} ({state['tasks'][t]['status']})" for t in healthy))
+    return list(task_ids)
+
+
+def cmd_retry(repo: Path, cfg: dict, run_ref, task_ids,
+              runner=None, force=False) -> None:
+    """Reset failed tasks so watch re-spawns them; falls through to
+    integration retry when nothing failed at the task level."""
+    state = load_state(repo, run_ref) if run_ref else latest_run(repo)
+    rid = state["run_id"]
+    if state["phase"] in ("shipped", "aborted"):
+        die(f"run {rid} is {state['phase']}")
+    if runner and runner not in cfg["runners"]:
+        die(f"runner `{runner}` not defined in runners.toml")
+
+    targets = _recovery_targets(state, task_ids, "retry")
+    if not targets:
+        if state["phase"] == "green":
+            die(f"run {rid} is green — nothing to retry "
+                f"(`thrawn status {rid}` for the ship code)")
+        info(f"no failed tasks in {rid} — retrying integration")
+        integrate(repo, cfg, state)
+        return
+
+    # protect possibly-salvageable work: a runner that exited 0 without
+    # committing usually left the whole change unstaged in its worktree
+    if not force:
+        for tid in targets:
+            wt = state["tasks"][tid].get("worktree")
+            if wt and Path(wt).exists():
+                porc = try_run(["git", "status", "--porcelain"], cwd=wt)
+                if porc and porc.stdout.strip():
+                    die(f"{tid}'s worktree has uncommitted work — look first:\n"
+                        f"    {wt}\n"
+                        f"  `thrawn adopt {rid} {tid}` to take it, "
+                        f"or retry with --force to discard it")
+
+    plan_path = run_dir(repo, rid) / "plan.json"
+    plan = json.loads(plan_path.read_text())
+    spawner = make_spawner()
+    for tid in targets:
+        ts = state["tasks"].pop(tid)
+        if ts.get("handle"):
+            spawner.close(ts["handle"])
+        wt = ts.get("worktree")
+        if wt and Path(wt).exists():
+            try_run(["git", "worktree", "remove", "--force", wt], cwd=repo)
+        if ts.get("branch"):
+            try_run(["git", "branch", "-D", ts["branch"]], cwd=repo)
+        if runner:
+            for task in plan["tasks"]:
+                if task["id"] == tid:
+                    task["runner"] = runner
+    if runner:
+        plan_path.write_text(json.dumps(plan, indent=2))
+    info(f"retrying {', '.join(targets)}"
+         + (f" on {BOLD}{runner}{RESET}" if runner else ""))
+    state["phase"] = "working"
+    save_state(repo, state)
+    watch(repo, cfg, state)
+
+
+def cmd_adopt(repo: Path, cfg: dict, run_ref, task_ids) -> None:
+    """Accept a failed task's work as done: commit anything unstaged in its
+    worktree, verify the branch actually has commits, mark done, resume."""
+    state = load_state(repo, run_ref) if run_ref else latest_run(repo)
+    rid = state["run_id"]
+    if state["phase"] in ("shipped", "aborted"):
+        die(f"run {rid} is {state['phase']}")
+
+    targets = _recovery_targets(state, task_ids, "adopt")
+    if not targets:
+        die(f"nothing to adopt in {rid} — no failed tasks")
+
+    for tid in targets:
+        ts = state["tasks"][tid]
+        wt = ts.get("worktree")
+        if not wt or not Path(wt).exists():
+            die(f"{tid} has no worktree to adopt from")
+        porc = run(["git", "status", "--porcelain"], cwd=Path(wt)).stdout.strip()
+        if porc:
+            run(["git", "add", "-A"], cwd=Path(wt))
+            run(["git", "commit", "-m", f"{tid}: adopt uncommitted agent work"],
+                cwd=Path(wt))
+            info(f"{tid}: committed the unstaged work it left behind")
+        count = run(
+            ["git", "rev-list", "--count", f"{state['base_commit']}..{ts['branch']}"],
+            cwd=repo,
+        ).stdout.strip()
+        if count == "0":
+            die(f"{tid}: nothing to adopt — no commits and no uncommitted "
+                f"changes in {wt}")
+        ts["status"] = "done"
+        ts["exit"] = 0
+        ts["finished"] = now_iso()
+        ts.pop("note", None)
+        info(f"{tid}: adopted — {count} commit(s) on {ts['branch']}")
+    state["phase"] = "working"
+    save_state(repo, state)
+    watch(repo, cfg, state)
+
+
 def find_open_run(repo: Path, intake: dict):
     """Most recent unfinished run for the same ticket/brief, if any."""
     matches = [
@@ -1438,8 +1560,8 @@ def continue_run(repo: Path, cfg: dict, prev: dict) -> None:
             f"`thrawn status {rid}` shows the ship code "
             f"(or `--new` for a fresh run)")
     if phase == "failed":
-        die(f"run {rid} for this target FAILED — `thrawn integrate {rid}` to "
-            f"retry, `thrawn abort {rid}` to scrap it, or `--new` to re-plan")
+        die(f"run {rid} for this target FAILED — `thrawn retry {rid}` to rerun "
+            f"what failed, `thrawn abort {rid}` to scrap it, or `--new` to re-plan")
     if phase == "planned":
         plan = json.loads((run_dir(repo, rid) / "plan.json").read_text())
         info(f"run {BOLD}{rid}{RESET} already has a plan — executing it, "
@@ -1522,6 +1644,11 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
   thrawn watch [run]           resume/execute a run
   thrawn status [run]          show the board (and ship code when green)
   thrawn ship <run> --code N   push + open PR/MR (requires green + code)
+  thrawn retry [run] [task…]   rerun failed tasks (default: all of them;
+                               --runner X reroutes, --force discards
+                               uncommitted worktree changes)
+  thrawn adopt [run] [task…]   accept a failed task's work as done —
+                               commits anything it left unstaged
   thrawn integrate [run]       retry the integration phase
   thrawn runs                  list runs in this repo
   thrawn abort [run]           kill agents, remove worktrees + branches
@@ -1625,6 +1752,20 @@ def main() -> None:
     elif sub == "integrate":
         state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)
         integrate(repo, cfg, state)
+    elif sub == "retry":
+        parser = argparse.ArgumentParser(prog="thrawn retry")
+        parser.add_argument("run_id", nargs="?")
+        parser.add_argument("tasks", nargs="*")
+        parser.add_argument("--runner")
+        parser.add_argument("--force", action="store_true")
+        ns = parser.parse_args(args[1:])
+        cmd_retry(repo, cfg, ns.run_id, ns.tasks, ns.runner, ns.force)
+    elif sub == "adopt":
+        parser = argparse.ArgumentParser(prog="thrawn adopt")
+        parser.add_argument("run_id", nargs="?")
+        parser.add_argument("tasks", nargs="*")
+        ns = parser.parse_args(args[1:])
+        cmd_adopt(repo, cfg, ns.run_id, ns.tasks)
     elif sub == "ship":
         parser = argparse.ArgumentParser(prog="thrawn ship")
         parser.add_argument("run_id")

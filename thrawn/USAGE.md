@@ -174,16 +174,26 @@ a comment dropped on the issue. On a GitLab remote the same step runs
 
 ## The other timeline — when things go wrong
 
-**A task fails** (agent exited non-zero):
+**A task fails** (agent exited non-zero, or exited 0 without committing):
 
 ```bash
 cat .thrawn/runs/gh-42/task-t2.log     # what happened
-cat .thrawn/worktrees/gh-42/t2/THRAWN-BLOCKED.md   # if it declared itself blocked
 ```
 
-Fix the cause (often: the task prompt was ambiguous, or the ticket lied),
-then either patch the worktree yourself and `thrawn integrate gh-42`, or
-`thrawn abort gh-42` and start over with a better ticket.
+The failed board prints each task's worktree path — look inside if you want
+to judge the work first. Then pick your decision:
+
+```bash
+thrawn retry gh-42                    # rerun everything that failed
+thrawn retry gh-42 t2 --runner opus   # rerun just t2, on a different runner
+thrawn adopt gh-42 t2                 # the work in t2's worktree is good —
+                                      # commit whatever it left unstaged, take it
+thrawn abort gh-42                    # scrap the run
+```
+
+`retry` refuses to delete a worktree with uncommitted changes — that's
+usually salvageable work an agent forgot to commit. Look at it, then
+`adopt` it or retry with `--force` to discard it.
 
 **Integration stuck red:**
 
@@ -234,6 +244,7 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 | See a saved plan | `thrawn plan gh-42 --full` |
 | Where are things? | `thrawn status` / `thrawn runs` |
 | It's green | `thrawn ship gh-42 --code NNNNNN` |
+| A task failed | `thrawn retry gh-42` — or `thrawn adopt gh-42 t2` to take its uncommitted work |
 | Retry integration | `thrawn integrate gh-42` |
 | Resume after ctrl-c | `thrawn watch gh-42` |
 | Give up | `thrawn abort gh-42` |
