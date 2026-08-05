@@ -144,12 +144,11 @@ phase: green   base: main @ 3f9a21c8
 ```
 
 You also get a herdr notification. Nothing has been pushed. Nothing will
-be, until you act. This is the moment to review if you want to:
+be, until you act. This is the moment to review:
 
 ```bash
-cd .thrawn/worktrees/gh-42/_integration
-git log --oneline main..    # what's going in
-git diff main               # the whole change
+thrawn diff gh-42           # the whole change going into the PR
+thrawn diff gh-42 t1        # or one task's contribution at a time
 ```
 
 ## Step 5 — ship it
@@ -177,11 +176,12 @@ a comment dropped on the issue. On a GitLab remote the same step runs
 **A task fails** (agent exited non-zero, or exited 0 without committing):
 
 ```bash
-cat .thrawn/runs/gh-42/task-t2.log     # what happened
+thrawn diff gh-42 t2                   # what it actually did: its blocked
+                                       # note, commits, and uncommitted work
+cat .thrawn/runs/gh-42/task-t2.log     # the full agent transcript
 ```
 
-The failed board prints each task's worktree path — look inside if you want
-to judge the work first. Then pick your decision:
+Judge the work, then pick your decision:
 
 ```bash
 thrawn retry gh-42                    # rerun everything that failed
@@ -243,6 +243,7 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 | Re-run `thrawn 42` | resumes the open run — never re-plans (`--new` forces fresh) |
 | See a saved plan | `thrawn plan gh-42 --full` |
 | Where are things? | `thrawn status` / `thrawn runs` |
+| What did it do? | `thrawn diff gh-42 [t2]` — incl. uncommitted worktree work |
 | It's green | `thrawn ship gh-42 --code NNNNNN` |
 | A task failed | `thrawn retry gh-42` — or `thrawn adopt gh-42 t2` to take its uncommitted work |
 | Retry integration | `thrawn integrate gh-42` |

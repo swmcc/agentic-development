@@ -483,6 +483,12 @@ class TestEndToEnd:
             f"thrawn-{e2e.state['run_id']}-t2.txt",
         }
 
+    def test_diff_of_green_run_shows_integration_change(self, T, e2e, capfd):
+        T.cmd_diff(e2e.repo, e2e.state["run_id"], None)
+        out = capfd.readouterr().out
+        assert "integration branch" in out
+        assert f"thrawn-{e2e.state['run_id']}-t1.txt" in out
+
     def test_redispatch_while_green_does_not_replan(self, T, e2e):
         with pytest.raises(SystemExit):
             T.dispatch(e2e.repo, e2e.cfg, None, plan_only=False)
@@ -603,6 +609,21 @@ class TestRecoveryEndToEnd:
         wt = Path(rec.state["tasks"]["t3"]["worktree"])
         assert (wt / "shy.txt").exists()  # the work survived
 
+    def test_diff_shows_blocked_note_and_unstaged_work(self, T, rec, capfd):
+        wt = Path(rec.state["tasks"]["t3"]["worktree"])
+        (wt / "THRAWN-BLOCKED.md").write_text("sandbox said no\n")
+        T.cmd_diff(rec.repo, rec.state["run_id"], "t3")
+        out = capfd.readouterr().out
+        assert "sandbox said no" in out          # its own account of why
+        assert "shy.txt" in out                  # the unstaged file
+        assert "salvage me" in out               # ...with its content
+
+    def test_diff_of_unintegrated_run_walks_tasks(self, T, rec, capfd):
+        T.cmd_diff(rec.repo, rec.state["run_id"], None)
+        out = capfd.readouterr().out
+        assert "not integrated yet" in out
+        assert "t1" in out and "t2" in out and "t3" in out
+
     def test_adopt_commits_the_leftover_work(self, T, rec):
         rid = rec.state["run_id"]
         with pytest.raises(SystemExit):  # t2 still failed → watch dies again
@@ -613,6 +634,10 @@ class TestRecoveryEndToEnd:
         count = g("rev-list", "--count", f"{after['base_commit']}..{branch}",
                   cwd=rec.repo).stdout.strip()
         assert count == "1"
+        # the work landed; the blocked marker (a signal, not work) did not
+        files = g("ls-tree", "-r", "--name-only", branch, cwd=rec.repo).stdout
+        assert "shy.txt" in files
+        assert "THRAWN-BLOCKED.md" not in files
 
     def test_retry_reroutes_and_goes_green(self, T, rec):
         rid = rec.state["run_id"]

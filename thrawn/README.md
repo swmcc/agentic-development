@@ -63,6 +63,7 @@ thrawn plan 123                  # plan only — review plan.json before executi
 thrawn recon                     # cache a codebase brief (faster/cheaper planning)
 thrawn watch gh-123              # execute a planned run / resume watching
 thrawn status                    # the board (shows ship code when green)
+thrawn diff gh-123 [t2]          # what a run — or one task — actually changed
 thrawn ship gh-123 --code 482913 # push + open PR/MR
 thrawn retry gh-123 [t2] [--runner opus]  # rerun failed tasks (reroute optional)
 thrawn adopt gh-123 t2           # accept work a failed task left uncommitted

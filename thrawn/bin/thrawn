@@ -1392,6 +1392,82 @@ def cmd_status(repo: Path, run_id) -> None:
         print(json.dumps(state, indent=2))
 
 
+def _git_show(cwd, *args) -> None:
+    """git output straight to the terminal — colour when it's a tty, no pager."""
+    subprocess.run(["git", "--no-pager", "-c", "color.ui=auto", *args], cwd=cwd)
+
+
+def _section(title: str) -> None:
+    print(f"\n{BOLD}── {title} {'─' * max(2, 58 - len(title))}{RESET}")
+
+
+def diff_task(repo: Path, state: dict, tid: str) -> None:
+    """Everything a task did: blocked note, commits on its branch, and any
+    uncommitted work still sitting in its worktree."""
+    ts = state["tasks"].get(tid)
+    if ts is None:
+        die(f"no task {tid} in {state['run_id']} — "
+            f"tasks: {', '.join(state['tasks']) or '(none)'}")
+    base = state["base_commit"]
+    branch, wt = ts.get("branch"), ts.get("worktree")
+    print(f"{BOLD}{tid}{RESET}  {ts.get('status', '?')}  "
+          f"{DIM}runner={ts.get('runner', '?')}  branch={branch}{RESET}")
+    if ts.get("note"):
+        print(f"  {YELLOW}{ts['note']}{RESET}")
+
+    blocked = Path(wt) / "THRAWN-BLOCKED.md" if wt else None
+    if blocked and blocked.exists():
+        _section(f"{tid} declared itself BLOCKED")
+        print(blocked.read_text().strip())
+
+    proc = try_run(["git", "rev-parse", "--verify", "-q", branch], cwd=repo) \
+        if branch else None
+    if proc and proc.returncode == 0:
+        count = try_run(["git", "rev-list", "--count", f"{base}..{branch}"],
+                        cwd=repo)
+        n = count.stdout.strip() if count and count.returncode == 0 else "?"
+        _section(f"committed on {branch} — {n} commit(s)")
+        if n not in ("0", "?"):
+            _git_show(repo, "log", "--oneline", f"{base}..{branch}")
+            _git_show(repo, "diff", f"{base}..{branch}")
+        else:
+            print(f"{DIM}(nothing committed){RESET}")
+
+    if wt and Path(wt).exists():
+        porc = try_run(["git", "status", "--porcelain"], cwd=wt)
+        lines = [ln for ln in (porc.stdout.splitlines() if porc else [])
+                 if not ln.endswith("THRAWN-BLOCKED.md")]
+        if lines:
+            _section(f"uncommitted in {tid}'s worktree")
+            _git_show(wt, "diff", "HEAD")
+            untracked = try_run(
+                ["git", "ls-files", "--others", "--exclude-standard"], cwd=wt)
+            for f in (untracked.stdout.splitlines() if untracked else []):
+                if f != "THRAWN-BLOCKED.md":
+                    _git_show(wt, "diff", "--no-index", "--", "/dev/null", f)
+
+
+def cmd_diff(repo: Path, run_ref=None, task_id=None) -> None:
+    state = load_state(repo, run_ref) if run_ref else latest_run(repo)
+    if task_id:
+        diff_task(repo, state, task_id)
+        return
+    base = state["base_commit"]
+    branch = state.get("integration", {}).get("branch")
+    proc = try_run(["git", "rev-parse", "--verify", "-q", branch], cwd=repo) \
+        if branch else None
+    if proc and proc.returncode == 0:
+        print(f"{BOLD}⚔ {state['run_id']}{RESET} — integration branch "
+              f"{branch} vs base {base[:8]}")
+        _git_show(repo, "diff", f"{base}..{branch}")
+    else:
+        print(f"{BOLD}⚔ {state['run_id']}{RESET} — not integrated yet, "
+              f"task by task:")
+        for tid in state["tasks"]:
+            print()
+            diff_task(repo, state, tid)
+
+
 def cmd_runs(repo: Path) -> None:
     runs = list_runs(repo)
     if not runs:
@@ -1518,6 +1594,8 @@ def cmd_adopt(repo: Path, cfg: dict, run_ref, task_ids) -> None:
         wt = ts.get("worktree")
         if not wt or not Path(wt).exists():
             die(f"{tid} has no worktree to adopt from")
+        # the blocked marker is a signal to thrawn, not part of the work
+        (Path(wt) / "THRAWN-BLOCKED.md").unlink(missing_ok=True)
         porc = run(["git", "status", "--porcelain"], cwd=Path(wt)).stdout.strip()
         if porc:
             run(["git", "add", "-A"], cwd=Path(wt))
@@ -1643,6 +1721,8 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
   thrawn recon                 cache a codebase brief (faster/cheaper planning)
   thrawn watch [run]           resume/execute a run
   thrawn status [run]          show the board (and ship code when green)
+  thrawn diff [run] [task]     what a run — or one task — actually changed,
+                               including uncommitted work in its worktree
   thrawn ship <run> --code N   push + open PR/MR (requires green + code)
   thrawn retry [run] [task…]   rerun failed tasks (default: all of them;
                                --runner X reroutes, --force discards
@@ -1747,6 +1827,9 @@ def main() -> None:
         cmd_status(repo, args[1] if len(args) > 1 else None)
     elif sub == "runs":
         cmd_runs(repo)
+    elif sub == "diff":
+        cmd_diff(repo, args[1] if len(args) > 1 else None,
+                 args[2] if len(args) > 2 else None)
     elif sub == "abort":
         cmd_abort(repo, args[1] if len(args) > 1 else None)
     elif sub == "integrate":
