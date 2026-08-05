@@ -9,6 +9,7 @@ Run with: make test   (or: python3 -m pytest thrawn/tests -q)
 
 import importlib.util
 import json
+import shutil
 import subprocess
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -316,6 +317,46 @@ class TestShipGate:
 
 
 # ---------------------------------------------------------------------------
+# Run reuse — bare dispatch resumes an open run instead of re-planning
+# ---------------------------------------------------------------------------
+
+INTAKE = {"kind": "brief", "ref": "b.md", "title": "t"}
+
+
+class TestRunReuse:
+    def test_open_run_is_found(self, T, tmp_path):
+        seed_state(T, tmp_path, phase="planned")
+        prev = T.find_open_run(tmp_path, INTAKE)
+        assert prev and prev["run_id"] == "r1"
+
+    def test_finished_and_crashed_runs_ignored(self, T, tmp_path):
+        for i, phase in enumerate(("shipped", "aborted", "planning")):
+            seed_state(T, tmp_path, run_id=f"r{i}", phase=phase)
+        assert T.find_open_run(tmp_path, INTAKE) is None
+
+    def test_different_target_ignored(self, T, tmp_path):
+        seed_state(T, tmp_path, target={"kind": "github", "ref": "42", "title": "x"})
+        assert T.find_open_run(tmp_path, INTAKE) is None
+
+    def test_most_recent_open_run_wins(self, T, tmp_path):
+        seed_state(T, tmp_path, run_id="r1", phase="working",
+                   created="2026-01-01T00:00:00")
+        seed_state(T, tmp_path, run_id="r2", phase="working",
+                   created="2026-02-01T00:00:00")
+        assert T.find_open_run(tmp_path, INTAKE)["run_id"] == "r2"
+
+    def test_green_run_points_at_ship_code(self, T, tmp_path):
+        prev = seed_state(T, tmp_path, phase="green")
+        with pytest.raises(SystemExit):
+            T.continue_run(tmp_path, base_cfg(T), prev)
+
+    def test_failed_run_points_at_integrate(self, T, tmp_path):
+        prev = seed_state(T, tmp_path, phase="failed")
+        with pytest.raises(SystemExit):
+            T.continue_run(tmp_path, base_cfg(T), prev)
+
+
+# ---------------------------------------------------------------------------
 # E2E — fake runners, real worktrees/merges, then ship to a local bare origin
 # ---------------------------------------------------------------------------
 
@@ -365,9 +406,13 @@ def e2e(T, tmp_path_factory):
     (repo / "THRAWN.md").write_text("# E2E test brief\n\nDo the fake work.\n")
 
     cfg = T.load_config(repo)
+    # worktrees live in a cache dir keyed by repo path; with --basetemp the
+    # path repeats across runs, so purge leftovers from any interrupted run
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
     T.dispatch(repo, cfg, None, plan_only=False)
     state = T.latest_run(repo)
     yield SimpleNamespace(repo=repo, cfg=cfg, origin=origin, state=state)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
     mp.undo()
 
 
@@ -391,6 +436,11 @@ class TestEndToEnd:
             f"thrawn-{e2e.state['run_id']}-t1.txt",
             f"thrawn-{e2e.state['run_id']}-t2.txt",
         }
+
+    def test_redispatch_while_green_does_not_replan(self, T, e2e):
+        with pytest.raises(SystemExit):
+            T.dispatch(e2e.repo, e2e.cfg, None, plan_only=False)
+        assert len(T.list_runs(e2e.repo)) == 1  # no second run was created
 
     def test_ship_wrong_code_leaves_run_green(self, T, e2e):
         with pytest.raises(SystemExit):

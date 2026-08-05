@@ -56,6 +56,7 @@ end-to-end, from `thrawn recon` to the PR, including the failure paths.
 
 ```bash
 thrawn 123                       # dispatch from issue #123 (gh/glab auto-detected)
+thrawn 123 --new                 # force a fresh plan (re-dispatch resumes the open run)
 thrawn briefs/dark-mode.md       # dispatch from a markdown brief
 thrawn                           # dispatch from ./THRAWN.md
 thrawn plan 123                  # plan only — review plan.json before executing

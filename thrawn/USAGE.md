@@ -70,8 +70,8 @@ thrawn plan: 3 task(s) → t1[opus], t2[haiku], t3[codex]
 thrawn planned only — execute with: thrawn watch gh-42
 ```
 
-Read the task prompts in `.thrawn/runs/gh-42/plan.json`. Sanity checks worth
-doing:
+Read the task prompts with `thrawn plan gh-42 --full` (or open
+`.thrawn/runs/gh-42/plan.json`). Sanity checks worth doing:
 
 - Do any two tasks touch the same files? (They'll conflict at merge.)
 - Are the routings sensible? (A `high` task on `local` would be a bad sign.)
@@ -230,6 +230,8 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 | New repo | `thrawn recon` |
 | Cautious dispatch | `thrawn plan 42` → review → `thrawn watch gh-42` |
 | Confident dispatch | `thrawn 42` |
+| Re-run `thrawn 42` | resumes the open run — never re-plans (`--new` forces fresh) |
+| See a saved plan | `thrawn plan gh-42 --full` |
 | Where are things? | `thrawn status` / `thrawn runs` |
 | It's green | `thrawn ship gh-42 --code NNNNNN` |
 | Retry integration | `thrawn integrate gh-42` |
