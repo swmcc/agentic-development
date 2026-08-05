@@ -48,6 +48,9 @@ Requires: `python3` ≥ 3.11, `git`, `claude` CLI. Optional: `herdr` (panes),
 
 ## Usage
 
+**New to thrawn? Read the [User Guide](USAGE.md)** — one scenario walked
+end-to-end, from `thrawn recon` to the PR, including the failure paths.
+
 ```bash
 thrawn 123                       # dispatch from issue #123 (gh/glab auto-detected)
 thrawn briefs/dark-mode.md       # dispatch from a markdown brief
