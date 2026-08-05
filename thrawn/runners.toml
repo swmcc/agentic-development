@@ -48,7 +48,7 @@ argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-perm
 notes = "fast + cheap; mechanical edits, templates, config changes, docs, small well-specified functions"
 
 [runners.codex]
-argv = ["codex", "exec", "--full-auto", "{prompt}"]
+argv = ["codex", "exec", "--full-auto", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"]
 notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-described scope"
 
 [runners.pi]
