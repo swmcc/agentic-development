@@ -2,7 +2,7 @@
 
 *Plan deeply, execute in parallel.*
 
-![thrawn running inside herdr](docs/thrawn-in-herdr.png)
+![thrawn — agentic development workflow](docs/thrawn.png)
 
 Give thrawn a ticket or a markdown brief. It:
 
@@ -83,6 +83,10 @@ The same detection drives shipping: GitHub repos get `gh pr create` (with
 Instead of a ticket, drop a `THRAWN.md` in the repo root (or pass any `.md`
 path). Template in [templates/THRAWN.md](templates/THRAWN.md) — goal,
 context, constraints, routing hints, out-of-scope.
+
+## In action
+
+![thrawn running inside herdr](docs/thrawn-in-herdr.png)
 
 ## How it talks to you
 
