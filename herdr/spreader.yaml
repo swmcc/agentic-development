@@ -103,7 +103,7 @@ workspaces:
       - label: Obsidian
 
   - name: Agentic
-    root: ~/Code/agentic
+    root: ~/Code/agentic-development
     tabs:
       - label: Agentic
         panes:
