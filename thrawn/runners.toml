@@ -48,7 +48,18 @@ argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-perm
 notes = "fast + cheap; mechanical edits, templates, config changes, docs, small well-specified functions"
 
 [runners.codex]
-argv = ["codex", "exec", "--full-auto", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"]
+# Do NOT pass --full-auto alongside --dangerously-bypass-approvals-and-sandbox:
+# they are mutually exclusive and codex exits 2 before doing any work.
+# (--full-auto is also deprecated in favour of `--sandbox workspace-write`.)
+#
+# Sandboxing does not work for thrawn tasks, so bypass it:
+#   * a worktree's .git is a pointer back to the MAIN repo, so
+#     .git/worktrees/<task>/index.lock lives outside the sandbox root —
+#     `git add` fails and the agent cannot commit its own work
+#   * the test suite needs PostgreSQL, which the sandbox blocks
+# `--sandbox danger-full-access` is the modern spelling of the same thing if
+# this flag is ever deprecated. Isolation comes from the worktree, not codex.
+argv = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"]
 notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-described scope"
 
 [runners.pi]
