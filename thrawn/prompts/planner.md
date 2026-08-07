@@ -28,6 +28,10 @@ Route each task to the cheapest runner that can do it well:
 # Rules for the plan
 
 1. Decompose into 1–{{max_tasks}} tasks. Fewer, larger tasks beat many tiny ones.
+   A SINGLE task is a legitimate, welcome plan: if this work does not split
+   into genuinely independent pieces, say so with one task — do NOT invent
+   parallelism by splitting one coherent change across tasks that touch the
+   same files. A dishonest split costs more than no split.
 2. Tasks run IN PARALLEL in separate worktrees from the same base commit.
    Minimise file overlap between tasks — overlapping edits become merge
    conflicts. If two pieces of work touch the same files, make them ONE task

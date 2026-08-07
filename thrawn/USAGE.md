@@ -50,6 +50,18 @@ and the plan is kept but nothing runs — re-plan with `thrawn plan gh-42
 abort gh-42`. Pass `--yes` to skip the prompt (non-interactive runs skip it
 automatically).
 
+Before it even asks, thrawn judges whether the ticket *deserves* it. The plan
+render shows `parallelism: N task(s) · critical path C · width W` — width is
+tasks divided by the longest dependency chain. Width 1.0 is a to-do list:
+thrawn would run it sequentially while paying worktree + merge + integrator
+overhead for nothing. Plans below `min_width` (default 2.0, tunable in
+`.thrawn.toml`) are refused with a handoff instead: the deep-think isn't
+wasted — `plan.json` is a well-researched brief for a single-agent session
+(`claude "implement .thrawn/runs/gh-42/plan.json"`). Disagree with the math?
+`thrawn watch gh-42` executes it anyway. The verdict lands in `state.json`,
+so after a few weeks `thrawn runs` history tells you whether your threshold
+is right.
+
 To stop before the question is even asked, plan explicitly:
 
 ```bash
@@ -247,6 +259,8 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 | Cautious dispatch | `thrawn plan 42` → review → `thrawn watch gh-42` |
 | Normal dispatch | `thrawn 42` — shows the plan, asks before executing |
 | Confident dispatch | `thrawn 42 --yes` — no approval prompt |
+| Plan doesn't decompose | width < min_width → handoff: `claude "implement .thrawn/runs/gh-42/plan.json"` |
+| Execute anyway | `thrawn watch gh-42` — overrides the width verdict |
 | Re-run `thrawn 42` | resumes the most advanced open run — never re-plans (`--new` forces fresh) |
 | See a saved plan | `thrawn plan gh-42 --full` |
 | Where are things? | `thrawn status` / `thrawn runs` |

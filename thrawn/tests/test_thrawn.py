@@ -446,6 +446,7 @@ default_runner = "fakework"
 allowed_runners = ["fakework"]
 poll_seconds = 0
 auto_recon = false
+min_width = 1.0  # the e2e plan is a width-1 chain; gate is tested separately
 
 [runners.fakeplan]
 argv = ["cat", "plan-fixture.json"]
@@ -531,6 +532,74 @@ class TestPlanGateDispatch:
         state = T.latest_run(gated.repo)
         assert state["phase"] == "green"
         assert len(T.list_runs(gated.repo)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Width gate — sequential plans are handed off, not executed
+# ---------------------------------------------------------------------------
+
+def mkplan(*deps_by_task):
+    """Plan with tasks t1..tN and the given deps lists."""
+    return {"tasks": [
+        {"id": f"t{i + 1}", "deps": list(deps)}
+        for i, deps in enumerate(deps_by_task)
+    ]}
+
+
+class TestPlanMetrics:
+    def test_chain_is_width_one(self, T):
+        m = T.plan_metrics(mkplan([], ["t1"], ["t2"]))
+        assert m == {"tasks": 3, "critical_path": 3, "width": 1.0}
+
+    def test_independent_tasks_are_full_width(self, T):
+        m = T.plan_metrics(mkplan([], [], []))
+        assert m == {"tasks": 3, "critical_path": 1, "width": 3.0}
+
+    def test_mixed_graph(self, T):
+        # t1, t2 parallel; t3 after t1 → 3 tasks over a chain of 2
+        m = T.plan_metrics(mkplan([], [], ["t1"]))
+        assert m == {"tasks": 3, "critical_path": 2, "width": 1.5}
+
+    def test_single_task(self, T):
+        assert T.plan_metrics(mkplan([]))["width"] == 1.0
+
+    def test_empty_and_cyclic_do_not_crash(self, T):
+        assert T.plan_metrics({"tasks": []})["width"] == 0.0
+        T.plan_metrics(mkplan(["t2"], ["t1"]))  # cycle: just don't recurse forever
+
+
+class TestWidthGate:
+    def test_wide_plan_passes(self, T):
+        cfg = base_cfg(T, min_width=2.0)
+        assert T.width_gate(cfg, "r1", mkplan([], [], [])) is True
+
+    def test_narrow_plan_refused(self, T, capfd):
+        cfg = base_cfg(T, min_width=2.0)
+        assert T.width_gate(cfg, "r1", mkplan([], ["t1"])) is False
+        out = capfd.readouterr().out
+        assert "thrawn watch r1" in out  # the escape hatch is advertised
+
+    def test_threshold_is_inclusive_and_tunable(self, T):
+        cfg = base_cfg(T, min_width=1.0)
+        assert T.width_gate(cfg, "r1", mkplan([], ["t1"])) is True
+
+
+class TestWidthGateDispatch:
+    def test_narrow_plan_stops_with_verdict_recorded(self, T, gated):
+        gated.cfg["thrawn"]["min_width"] = 2.0  # PLAN_FIXTURE is width 1.0
+        T.dispatch(gated.repo, gated.cfg, None, plan_only=False)
+        state = T.latest_run(gated.repo)
+        assert state["phase"] == "planned"
+        assert state["tasks"] == {}
+        assert state["verdict"] == {"tasks": 2, "critical_path": 2, "width": 1.0}
+
+    def test_watch_executes_a_width_refused_plan(self, T, gated):
+        gated.cfg["thrawn"]["min_width"] = 2.0
+        T.dispatch(gated.repo, gated.cfg, None, plan_only=False)
+        state = T.latest_run(gated.repo)
+        state["phase"] = "working"  # what `thrawn watch <run>` does
+        T.watch(gated.repo, gated.cfg, state)
+        assert T.latest_run(gated.repo)["phase"] == "green"
 
 
 @pytest.fixture(scope="module")

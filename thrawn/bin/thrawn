@@ -196,6 +196,8 @@ def load_config(repo: Path) -> dict:
             "auto_recon": True,  # dispatch runs recon first when no cache exists
             "auto_fix": False,   # dispatch integrator agents WITHOUT asking? no.
             "allow_no_checks": False,  # green with zero checks? never silently.
+            "min_width": 2.0,    # tasks/critical-path below this → hand off to
+                                 # a single-agent session instead of executing
         },
         "checks": {"commands": []},
         "worktree": {"setup": ""},
@@ -926,6 +928,9 @@ def render_plan(repo: Path, run_id: str, plan: dict, full: bool = False) -> None
     print()
     print(f"{BOLD}⚔ plan {run_id}{RESET}  {plan.get('summary', '')}")
     print(f"  {DIM}branch:{RESET} {plan.get('branch', '')}")
+    m = plan_metrics(plan)
+    print(f"  {DIM}parallelism:{RESET} {m['tasks']} task(s) · "
+          f"critical path {m['critical_path']} · width {m['width']}")
     print()
     for task in plan["tasks"]:
         deps = (f"  {DIM}(after {', '.join(task['deps'])}){RESET}"
@@ -1647,6 +1652,45 @@ def find_open_run(repo: Path, intake: dict):
     return best
 
 
+def plan_metrics(plan: dict) -> dict:
+    """Effective parallelism of a plan: tasks / critical path (the longest
+    dependency chain). Width 1.0 is a to-do list — thrawn would execute it
+    sequentially while paying worktree + merge + integrator overhead."""
+    tasks = {t["id"]: t for t in plan.get("tasks", [])}
+    memo: dict = {}
+
+    def depth(tid, seen=()):
+        if tid in memo:
+            return memo[tid]
+        if tid in seen:  # cycle: treat as chain end rather than recurse forever
+            return 1
+        deps = [d for d in tasks[tid].get("deps", []) if d in tasks]
+        memo[tid] = 1 + max((depth(d, seen + (tid,)) for d in deps), default=0)
+        return memo[tid]
+
+    critical = max((depth(t) for t in tasks), default=0)
+    width = round(len(tasks) / critical, 2) if critical else 0.0
+    return {"tasks": len(tasks), "critical_path": critical, "width": width}
+
+
+def width_gate(cfg: dict, run_id: str, plan: dict) -> bool:
+    """False when the plan is too sequential for thrawn to earn its overhead.
+    The deep-think isn't wasted: plan.json becomes the brief for a
+    single-agent session. `thrawn watch <run>` executes anyway."""
+    m = plan_metrics(plan)
+    min_width = cfg["thrawn"]["min_width"]
+    if not m["tasks"] or m["width"] >= min_width:
+        return True
+    info(f"{YELLOW}width {m['width']} ({m['tasks']} task(s) / critical path "
+         f"{m['critical_path']}) is below min_width {min_width} — this ticket "
+         f"doesn't decompose; thrawn adds overhead, not speed{RESET}")
+    info(f"the plan is your brief: "
+         f"claude \"implement .thrawn/runs/{run_id}/plan.json\" — or "
+         f"`thrawn watch {run_id}` to execute with thrawn anyway "
+         f"{DIM}(min_width in .thrawn.toml tunes this){RESET}")
+    return False
+
+
 def plan_approved(run_id: str, auto_yes: bool = False) -> bool:
     """Gate between planning and execution: the rendered plan must be approved
     before any agent spawns. Non-interactive contexts proceed unprompted —
@@ -1681,6 +1725,8 @@ def continue_run(repo: Path, cfg: dict, prev: dict, auto_yes: bool = False) -> N
             info(f"{YELLOW}note: plan was made at {prev['base_commit'][:8]}; "
                  f"tasks branch from there, not current HEAD{RESET}")
         render_plan(repo, rid, plan)
+        if not width_gate(cfg, rid, plan):
+            return
         if not plan_approved(rid, auto_yes):
             return
     else:  # working / integrating — orchestrator died or was ctrl-c'd
@@ -1726,9 +1772,12 @@ def dispatch(repo: Path, cfg: dict, target, plan_only: bool,
     info(f"plan: {len(plan['tasks'])} task(s) → "
          + ", ".join(f"{t['id']}[{t['runner']}]" for t in plan["tasks"]))
     state["phase"] = "planned"
+    state["verdict"] = plan_metrics(plan)
     save_state(repo, state)
     render_plan(repo, run_id, plan)
     if plan_only:
+        return
+    if not width_gate(cfg, run_id, plan):
         return
     if not plan_approved(run_id, auto_yes):
         return

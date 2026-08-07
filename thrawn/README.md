@@ -56,7 +56,10 @@ end-to-end, from `thrawn recon` to the PR, including the failure paths.
 
 ```bash
 thrawn 123                       # dispatch from issue #123 (gh/glab auto-detected);
-                                 # shows the plan and asks before agents spawn
+                                 # shows the plan and asks before agents spawn.
+                                 # plans with no real parallelism (width below
+                                 # min_width, default 2.0) are handed off: the
+                                 # plan.json becomes a brief for plain claude
 thrawn 123 --yes                 # skip the plan-approval prompt
 thrawn 123 --new                 # force a fresh plan (re-dispatch resumes the most
                                  # advanced open run and warns about duplicates)
