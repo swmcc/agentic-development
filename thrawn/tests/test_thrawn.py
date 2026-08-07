@@ -468,6 +468,71 @@ PLAN_FIXTURE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Plan approval gate — the rendered plan must be approved before agents spawn
+# ---------------------------------------------------------------------------
+
+class TestPlanApproved:
+    def _tty(self, T, monkeypatch):
+        monkeypatch.setattr(T.sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(T.sys.stdout, "isatty", lambda: True)
+
+    def test_non_interactive_proceeds(self, T):
+        # pytest's stdin is not a tty — the gate must not block scripted runs
+        assert T.plan_approved("r1") is True
+
+    def test_auto_yes_never_prompts(self, T, monkeypatch):
+        self._tty(T, monkeypatch)
+        monkeypatch.setattr(T, "confirm",
+                            lambda q: pytest.fail("prompted despite --yes"))
+        assert T.plan_approved("r1", auto_yes=True) is True
+
+    def test_interactive_yes_proceeds(self, T, monkeypatch):
+        self._tty(T, monkeypatch)
+        monkeypatch.setattr(T, "confirm", lambda q: True)
+        assert T.plan_approved("r1") is True
+
+    def test_interactive_no_declines(self, T, monkeypatch):
+        self._tty(T, monkeypatch)
+        monkeypatch.setattr(T, "confirm", lambda q: False)
+        assert T.plan_approved("r1") is False
+
+
+@pytest.fixture
+def gated(T, tmp_path, monkeypatch):
+    """A repo ready to dispatch with fake runners, for scripting the gate."""
+    monkeypatch.setenv("THRAWN_NO_HERDR", "1")
+    repo = init_repo(tmp_path / "repo")
+    (repo / ".thrawn.toml").write_text(THRAWN_TOML)
+    (repo / "plan-fixture.json").write_text(json.dumps(PLAN_FIXTURE))
+    (repo / "THRAWN.md").write_text("# Gate test brief\n")
+    cfg = T.load_config(repo)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
+    yield SimpleNamespace(repo=repo, cfg=cfg)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
+
+
+class TestPlanGateDispatch:
+    def test_declined_plan_spawns_nothing(self, T, gated, monkeypatch):
+        monkeypatch.setattr(T, "plan_approved", lambda rid, auto=False: False)
+        T.dispatch(gated.repo, gated.cfg, None, plan_only=False)
+        state = T.latest_run(gated.repo)
+        assert state["phase"] == "planned"
+        assert state["tasks"] == {}
+
+    def test_declined_then_approved_resume_goes_green(self, T, gated,
+                                                      monkeypatch):
+        monkeypatch.setattr(T, "plan_approved", lambda rid, auto=False: False)
+        T.dispatch(gated.repo, gated.cfg, None, plan_only=False)
+        # re-dispatching the same target resumes the planned run; approving
+        # the gate this time lets it execute — no second run is created
+        monkeypatch.setattr(T, "plan_approved", lambda rid, auto=False: True)
+        T.dispatch(gated.repo, gated.cfg, None, plan_only=False)
+        state = T.latest_run(gated.repo)
+        assert state["phase"] == "green"
+        assert len(T.list_runs(gated.repo)) == 1
+
+
 @pytest.fixture(scope="module")
 def e2e(T, tmp_path_factory):
     """Dispatch a full run with fake runners; yields the green run."""

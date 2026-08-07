@@ -1647,7 +1647,21 @@ def find_open_run(repo: Path, intake: dict):
     return best
 
 
-def continue_run(repo: Path, cfg: dict, prev: dict) -> None:
+def plan_approved(run_id: str, auto_yes: bool = False) -> bool:
+    """Gate between planning and execution: the rendered plan must be approved
+    before any agent spawns. Non-interactive contexts proceed unprompted —
+    the ship code remains the hard gate."""
+    if auto_yes or not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return True
+    if confirm("happy with this plan — execute it?"):
+        return True
+    info(f"plan kept, nothing spawned — `thrawn plan {run_id} --again` to "
+         f"re-plan, `thrawn watch {run_id}` to execute it, "
+         f"`thrawn abort {run_id}` to scrap it")
+    return False
+
+
+def continue_run(repo: Path, cfg: dict, prev: dict, auto_yes: bool = False) -> None:
     """Pick an existing run back up instead of re-planning the same target."""
     rid, phase = prev["run_id"], prev["phase"]
     if phase == "green":
@@ -1667,6 +1681,8 @@ def continue_run(repo: Path, cfg: dict, prev: dict) -> None:
             info(f"{YELLOW}note: plan was made at {prev['base_commit'][:8]}; "
                  f"tasks branch from there, not current HEAD{RESET}")
         render_plan(repo, rid, plan)
+        if not plan_approved(rid, auto_yes):
+            return
     else:  # working / integrating — orchestrator died or was ctrl-c'd
         info(f"run {BOLD}{rid}{RESET} is already {phase} — resuming watch")
     prev["phase"] = "working"
@@ -1675,13 +1691,13 @@ def continue_run(repo: Path, cfg: dict, prev: dict) -> None:
 
 
 def dispatch(repo: Path, cfg: dict, target, plan_only: bool,
-             force_new: bool = False) -> None:
+             force_new: bool = False, auto_yes: bool = False) -> None:
     ensure_git_exclude(repo)
     intake = resolve_target(repo, target)
     if not plan_only and not force_new:
         prev = find_open_run(repo, intake)
         if prev:
-            continue_run(repo, cfg, prev)
+            continue_run(repo, cfg, prev, auto_yes)
             return
     if cfg["thrawn"]["auto_recon"] and not recon_paths(repo)[0].exists():
         info("no recon cache for this repo — surveying first (step 0)")
@@ -1709,10 +1725,12 @@ def dispatch(repo: Path, cfg: dict, target, plan_only: bool,
     plan = run_planner(repo, cfg, intake, run_id)
     info(f"plan: {len(plan['tasks'])} task(s) → "
          + ", ".join(f"{t['id']}[{t['runner']}]" for t in plan["tasks"]))
+    state["phase"] = "planned"
+    save_state(repo, state)
+    render_plan(repo, run_id, plan)
     if plan_only:
-        state["phase"] = "planned"
-        save_state(repo, state)
-        render_plan(repo, run_id, plan)
+        return
+    if not plan_approved(run_id, auto_yes):
         return
 
     state["phase"] = "working"
@@ -1729,7 +1747,9 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
   thrawn <issue#>              dispatch from a GitHub/GitLab issue
   thrawn <brief.md>            dispatch from a markdown brief
   thrawn                       dispatch from ./THRAWN.md
-                               (an open run for the same target is resumed,
+                               (the plan is shown for approval before any
+                                agent spawns — skip the prompt with --yes;
+                                an open run for the same target is resumed,
                                 never re-planned — force fresh with --new)
   thrawn plan <target>         plan only (review before executing)
   thrawn plan <run>            re-show the saved plan of an existing run
@@ -1799,7 +1819,8 @@ def main() -> None:
     repo = repo_root()
     cfg = load_config(repo)
     force_new = "--new" in args
-    args = [a for a in args if a != "--new"]
+    auto_yes = "--yes" in args or "-y" in args
+    args = [a for a in args if a not in ("--new", "--yes", "-y")]
     sub = args[0] if args else None
 
     if sub == "recon":
@@ -1873,7 +1894,8 @@ def main() -> None:
         ns = parser.parse_args(args[1:])
         ship(repo, cfg, ns.run_id, ns.code)
     else:
-        dispatch(repo, cfg, sub, plan_only=False, force_new=force_new)
+        dispatch(repo, cfg, sub, plan_only=False, force_new=force_new,
+                 auto_yes=auto_yes)
 
 
 if __name__ == "__main__":

@@ -43,8 +43,14 @@ manual.)
 
 ## Step 1 — see the plan before committing to it
 
-You *can* just run `thrawn 42` and let it fly. First few times, look at the
-plan first:
+Every dispatch shows you the plan before anything spawns: `thrawn 42` renders
+it and asks `happy with this plan — execute it? [y/N]`. Answer `n` (or Ctrl-C)
+and the plan is kept but nothing runs — re-plan with `thrawn plan gh-42
+--again`, execute later with `thrawn watch gh-42`, or scrap it with `thrawn
+abort gh-42`. Pass `--yes` to skip the prompt (non-interactive runs skip it
+automatically).
+
+To stop before the question is even asked, plan explicitly:
 
 ```bash
 thrawn plan 42
@@ -239,7 +245,8 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 |--------|---------|
 | New repo | `thrawn recon` |
 | Cautious dispatch | `thrawn plan 42` → review → `thrawn watch gh-42` |
-| Confident dispatch | `thrawn 42` |
+| Normal dispatch | `thrawn 42` — shows the plan, asks before executing |
+| Confident dispatch | `thrawn 42 --yes` — no approval prompt |
 | Re-run `thrawn 42` | resumes the most advanced open run — never re-plans (`--new` forces fresh) |
 | See a saved plan | `thrawn plan gh-42 --full` |
 | Where are things? | `thrawn status` / `thrawn runs` |
