@@ -1,136 +1,164 @@
 # herdr-spreader workspace config
 # Install: cargo install herdr-spreader
-# Run: herdr-spreader --config ~/.config/herdr/spreader.yaml
+# Run: herdr-spreader apply --file ~/.config/herdr/spreader.yaml
+#
+# Standard layout per workspace:
+#   agentic  - claude code (left pane) + codex (right pane)
+#   git      - lazygit
+#   obsidian - plain shell
+#   system   - plain shell
 
 workspaces:
-  - name: swm.cc
-    root: ~/Code/swm.cc
+  - name: second_breakfast
+    root: ~/Documents/Code/second_breakfast
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: whatisonthe.tv
-    root: ~/Code/whatisonthe.tv
+  - name: the-mcculloughs.org
+    root: ~/Documents/Code/the-mcculloughs.org
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: Search for a Property
-    root: ~/Code/searchforaproperty
+  - name: swmcc.github.io
+    root: ~/Documents/Code/swmcc.github.io
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: Funerals NI
-    root: ~/Code/funeralsni
+  - name: thoughts
+    root: ~/Documents/Code/thoughts
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: Second Breakfast
-    root: ~/Code/second_breakfast
+  - name: experiments.swm.cc
+    root: ~/Documents/Code/experiments.swm.cc
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: The Only Stephen
-    root: ~/Code/theonlystephen.com
+  - name: agentic-development
+    root: ~/Documents/Code/agentic-development
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: BMK
-    root: ~/Code/bmk
+  - name: searchforaproperty.com
+    root: ~/Documents/Code/searchforaproperty.com
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: Jotter
-    root: ~/Code/jotter
+  - name: funeralsni
+    root: ~/Documents/Code/funeralsni
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: The McCulloughs
-    root: ~/Code/the-mcculloughs.org
+  - name: jotter
+    root: ~/Documents/Code/jotter
     tabs:
-      - label: Agentic
+      - label: agentic
         panes:
           - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
+          - command: codex
+      - label: git
+        panes:
+          - command: lazygit
+      - label: obsidian
+        panes:
+          - command: zsh
+      - label: system
+        panes:
+          - command: zsh
 
-  - name: Agentic
-    root: ~/Code/agentic-development
-    tabs:
-      - label: Agentic
-        panes:
-          - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
-
-  - name: Catch
-    root: ~/Code/catch
-    tabs:
-      - label: Agentic
-        panes:
-          - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian
-
-  - name: Thoughts
-    root: ~/Code/thoughts
-    tabs:
-      - label: Agentic
-        panes:
-          - command: claude
-      - label: Git
-      - label: Neovim
-      - label: System
-      - label: Obsidian

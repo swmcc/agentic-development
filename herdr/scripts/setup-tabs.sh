@@ -1,20 +1,24 @@
 #!/bin/bash
-# Setup standard tabs for all workspaces
+# Setup standard tabs for all existing workspaces.
+#
+# Superseded by scripts/scaffold-workspace.sh, which also starts the agents and
+# lazygit and is idempotent. Kept as a minimal fallback: tabs only, no panes.
 
-# Get workspace IDs (skip w2 which is current session)
-workspaces="w5 w6 w7 w8 w9 wA wB wC wD wE wF"
+# Every workspace except the one this script is run from
+workspaces=$(herdr workspace list \
+    | grep -o '"workspace_id":"[^"]*"' \
+    | cut -d'"' -f4 \
+    | grep -v "^${HERDR_WORKSPACE_ID:-none}$")
 
 for ws in $workspaces; do
     echo "Setting up tabs for $ws..."
 
-    # Rename first tab to Agentic
-    herdr tab rename "${ws}:t1" "Agentic"
+    # Rename first tab, then add the rest
+    herdr tab rename "${ws}:t1" "agentic"
 
-    # Create additional tabs
-    herdr tab create --workspace "$ws" --label "Git"
-    herdr tab create --workspace "$ws" --label "Neovim"
-    herdr tab create --workspace "$ws" --label "System"
-    herdr tab create --workspace "$ws" --label "Obsidian"
+    herdr tab create --workspace "$ws" --label "git"
+    herdr tab create --workspace "$ws" --label "obsidian"
+    herdr tab create --workspace "$ws" --label "system"
 done
 
 echo "Done - all tabs created"

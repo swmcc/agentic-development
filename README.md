@@ -6,8 +6,8 @@ Configuration and tooling for agentic development workflows.
 
 ```bash
 # Clone the repo
-git clone git@github.com:swmcc/agentic-development.git ~/Code/agentic-development
-cd ~/Code/agentic-development
+git clone git@github.com:swmcc/agentic-development.git ~/Documents/Code/agentic-development
+cd ~/Documents/Code/agentic-development
 
 # Install everything and configure
 make all
@@ -37,6 +37,12 @@ Herdr is a modern terminal multiplexer with first-class support for AI coding ag
 - Agent state tracking (working/idle indicators)
 - Popup commands (like lazygit)
 - Gruvbox and other themes
+
+Workspaces are defined in `herdr/spreader.yaml`, one per project under
+`~/Documents/Code`, each laid out with the same four tabs: `agentic` (Claude Code
++ Codex), `git` (lazygit), `obsidian` and `system`. To apply that layout to a
+workspace that already exists, use `herdr-scaffold-workspace` — see
+[herdr/README.md](herdr/README.md).
 
 ## Make Targets
 

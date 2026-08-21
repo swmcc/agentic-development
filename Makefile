@@ -7,6 +7,7 @@ RESET := $(shell tput -Txterm sgr0)
 HERDR_CONFIG_DIR := $(HOME)/.config/herdr
 CLAUDE_HOOKS_DIR := $(HOME)/.claude/hooks
 CODEX_DIR := $(HOME)/.codex
+LOCAL_BIN := $(HOME)/.local/bin
 REPO_DIR := $(shell pwd)
 
 .DEFAULT_GOAL := help
@@ -83,12 +84,15 @@ setup-config: ## Symlink herdr config files
 	@ln -sf $(REPO_DIR)/herdr/spreader.yaml $(HERDR_CONFIG_DIR)/spreader.yaml
 	@ln -sf $(REPO_DIR)/herdr/scripts/setup-spaces.sh $(HERDR_CONFIG_DIR)/setup-spaces.sh
 	@ln -sf $(REPO_DIR)/herdr/scripts/setup-tabs.sh $(HERDR_CONFIG_DIR)/setup-tabs.sh
+	@mkdir -p $(LOCAL_BIN)
+	@ln -sf $(REPO_DIR)/herdr/scripts/scaffold-workspace.sh $(LOCAL_BIN)/herdr-scaffold-workspace
 	@chmod +x $(REPO_DIR)/herdr/scripts/*.sh
 	@echo "$(GREEN)Config symlinks created:$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/config.toml$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/spreader.yaml$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/setup-spaces.sh$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/setup-tabs.sh$(RESET)"
+	@echo "  $(YELLOW)~/.local/bin/herdr-scaffold-workspace$(RESET)"
 
 .PHONY: setup-hooks
 setup-hooks: ## Symlink agent integration hooks
@@ -106,7 +110,7 @@ setup-hooks: ## Symlink agent integration hooks
 setup-workspaces: ## Create all workspaces using herdr-spreader
 	@echo "$(GREEN)Creating workspaces...$(RESET)"
 	@if command -v herdr-spreader >/dev/null 2>&1; then \
-		herdr-spreader --config $(HERDR_CONFIG_DIR)/spreader.yaml && \
+		herdr-spreader apply --file $(HERDR_CONFIG_DIR)/spreader.yaml && \
 		echo "$(GREEN)Workspaces created successfully$(RESET)"; \
 	else \
 		echo "$(RED)herdr-spreader not found. Run 'make install-spreader' first$(RESET)"; \
@@ -170,6 +174,7 @@ unlink: ## Remove all symlinks (keeps tools installed)
 	@rm -f $(HERDR_CONFIG_DIR)/spreader.yaml
 	@rm -f $(HERDR_CONFIG_DIR)/setup-spaces.sh
 	@rm -f $(HERDR_CONFIG_DIR)/setup-tabs.sh
+	@rm -f $(LOCAL_BIN)/herdr-scaffold-workspace
 	@rm -f $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
 	@rm -f $(HOME)/.local/bin/thrawn
@@ -198,6 +203,7 @@ status: ## Show installation status
 	@echo "$(YELLOW)Config symlinks:$(RESET)"
 	@printf "  config.toml:    "; [ -L $(HERDR_CONFIG_DIR)/config.toml ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@printf "  spreader.yaml:  "; [ -L $(HERDR_CONFIG_DIR)/spreader.yaml ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
+	@printf "  scaffold CLI:   "; [ -L $(LOCAL_BIN)/herdr-scaffold-workspace ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Hook symlinks:$(RESET)"
 	@printf "  claude hook:    "; [ -L $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
