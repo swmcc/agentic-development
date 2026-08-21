@@ -7,6 +7,7 @@ RESET := $(shell tput -Txterm sgr0)
 HERDR_CONFIG_DIR := $(HOME)/.config/herdr
 CLAUDE_HOOKS_DIR := $(HOME)/.claude/hooks
 CODEX_DIR := $(HOME)/.codex
+CLAUDE_SKILLS_DIR := $(HOME)/.claude/skills
 LOCAL_BIN := $(HOME)/.local/bin
 REPO_DIR := $(shell pwd)
 
@@ -23,7 +24,7 @@ all: install setup ## Install everything and configure
 install: install-herdr install-spreader install-lazygit ## Install all dependencies
 
 .PHONY: setup
-setup: setup-config setup-hooks setup-workspaces setup-thrawn ## Configure herdr with this repo's settings
+setup: setup-config setup-hooks setup-skills setup-workspaces setup-thrawn ## Configure herdr with this repo's settings
 
 # ============================================================================
 # 📦 Installation
@@ -106,6 +107,17 @@ setup-hooks: ## Symlink agent integration hooks
 	@echo "  $(YELLOW)~/.claude/hooks/herdr-agent-state.sh$(RESET)"
 	@echo "  $(YELLOW)~/.codex/herdr-agent-state.sh$(RESET)"
 
+.PHONY: setup-skills
+setup-skills: ## Symlink Claude Code skills
+	@echo "$(GREEN)Setting up Claude Code skills...$(RESET)"
+	@mkdir -p $(CLAUDE_SKILLS_DIR)
+	@for s in $(REPO_DIR)/skills/*/; do \
+		name=$$(basename "$$s"); \
+		ln -sfn "$$s" $(CLAUDE_SKILLS_DIR)/$$name; \
+		echo "  $(YELLOW)~/.claude/skills/$$name$(RESET)"; \
+	done
+	@chmod +x $(REPO_DIR)/skills/*/*.sh 2>/dev/null || true
+
 .PHONY: setup-workspaces
 setup-workspaces: ## Create all workspaces using herdr-spreader
 	@echo "$(GREEN)Creating workspaces...$(RESET)"
@@ -177,6 +189,7 @@ unlink: ## Remove all symlinks (keeps tools installed)
 	@rm -f $(LOCAL_BIN)/herdr-scaffold-workspace
 	@rm -f $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
+	@for s in $(REPO_DIR)/skills/*/; do rm -f $(CLAUDE_SKILLS_DIR)/$$(basename "$$s"); done
 	@rm -f $(HOME)/.local/bin/thrawn
 	@echo "$(GREEN)Symlinks removed$(RESET)"
 
@@ -208,6 +221,9 @@ status: ## Show installation status
 	@echo "$(YELLOW)Hook symlinks:$(RESET)"
 	@printf "  claude hook:    "; [ -L $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@printf "  codex hook:     "; [ -L $(CODEX_DIR)/herdr-agent-state.sh ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
+	@echo ""
+	@echo "$(YELLOW)Skills:$(RESET)"
+	@printf "  dependabot:     "; [ -L $(CLAUDE_SKILLS_DIR)/dependabot-automerge ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@echo ""
 	@echo "$(YELLOW)Thrawn:$(RESET)"
 	@printf "  thrawn CLI:     "; [ -L $(HOME)/.local/bin/thrawn ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"

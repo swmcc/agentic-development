@@ -25,6 +25,7 @@ make status
 | Path | Purpose |
 |------|---------|
 | `herdr/` | [Herdr](https://herdr.io) terminal multiplexer configuration |
+| `skills/` | Claude Code skills, symlinked into `~/.claude/skills` |
 | `thrawn/` | ⚔ Parallel agent orchestrator — plan with fable, execute with opus/haiku/codex/local in worktrees |
 | `Makefile` | Installation and setup automation |
 
@@ -57,6 +58,22 @@ workspace that already exists, use `herdr-scaffold-workspace` — see
 | `make uninstall` | Remove everything |
 
 Run `make help` for the full list.
+
+## Skills
+
+Claude Code skills live in `skills/`, one directory each, and `make setup-skills`
+symlinks them into `~/.claude/skills`.
+
+| Skill | Purpose |
+|-------|---------|
+| `dependabot-automerge` | Set up, audit, or fix Dependabot auto-merge so patch/minor merge only after tests pass and majors never do |
+
+Audit any repo without changing it:
+
+```bash
+skills/dependabot-automerge/audit.sh swmcc/second_breakfast
+skills/dependabot-automerge/audit.sh --dir ~/Documents/Code
+```
 
 ## Thrawn
 
