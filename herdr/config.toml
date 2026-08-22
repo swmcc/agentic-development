@@ -1,5 +1,6 @@
 [keys]
 prefix = "ctrl+a"
+goto = "prefix+f"
 
 [ui.toast]
 delivery = "herdr"
@@ -15,13 +16,13 @@ description = "run lazygit"
 width = "80%"
 height = "80%"
 
-# [[keys.command]]
-# key = "prefix+t"
-# type = "popup"
-# command = "exec \"${SHELL:-sh}\""
-# description = "open scratch terminal"
-# width = "80%"
-# height = "80%"
+[[keys.command]]
+key = "prefix+t"
+type = "popup"
+command = "exec bash -c 'read -rp \"Label: \" l; [ -n \"$l\" ] || exit 0; read -rp \"Path (default current dir): \" p; herdr-newspace \"$l\" \"${p:-$PWD}\"'"
+description = "new workspace with standard tabs"
+width = "60%"
+height = "30%"
 
 [theme]
 name = "gruvbox"
