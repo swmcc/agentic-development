@@ -66,6 +66,10 @@ thrawn 123 --new                 # force a fresh plan (re-dispatch resumes the m
 thrawn briefs/dark-mode.md       # dispatch from a markdown brief
 thrawn                           # dispatch from ./THRAWN.md
 thrawn plan 123                  # plan only — review plan.json before executing
+thrawn swarm COS-2101 COS-2102   # lightweight: one worktree + pane + agent per
+                                 # issue, collected in an `agents` tab — no
+                                 # planner, no integrator, no ship; you
+                                 # orchestrate (--runner codex picks the agent)
 thrawn recon                     # cache a codebase brief (faster/cheaper planning)
 thrawn watch gh-123              # execute a planned run / resume watching
 thrawn status                    # the board (shows ship code when green)
@@ -125,6 +129,34 @@ The same detection drives shipping: GitHub repos get `gh pr create` (with
 Instead of a ticket, drop a `THRAWN.md` in the repo root (or pass any `.md`
 path). Template in [templates/THRAWN.md](templates/THRAWN.md) — goal,
 context, constraints, routing hints, out-of-scope.
+
+## Swarm mode — you orchestrate
+
+`thrawn <issue>` is automated orchestration. `thrawn swarm <issues…>` is
+automated *environment setup* with manual orchestration:
+
+```bash
+thrawn swarm COS-2101 COS-2102 COS-2103            # default runner
+thrawn swarm COS-2101 COS-2102 --runner codex      # pick the agent
+```
+
+Per issue you get a git worktree (branched from HEAD as
+`thrawn/swarm/<issue>`) and a herdr pane labelled with the issue id, cwd
+set to the worktree, with the selected runner started on that issue. The
+panes collect in a tab called **`agents`** in the workspace you ran the
+command from — found if it already exists, created if not, shared by
+consecutive swarms (rename it with `swarm_tab` in `.thrawn.toml`). Your
+own tab and pane are left alone. Issue ids can be GitHub/GitLab
+numbers (fetched like normal dispatch), `.md` briefs, or opaque keys like
+`COS-2101` — anything thrawn can't fetch is passed to the agent as-is.
+
+What swarm deliberately does **not** do: no fable planning, no task
+decomposition, no integrator agents, no automatic merging, no ship flow.
+The board still works — `thrawn status` shows per-issue progress (agents
+that exit 0 without committing are flagged, same as orchestrated runs),
+`thrawn diff swarm <issue>` reviews one branch, and `thrawn abort swarm`
+kills the agents and removes worktrees + branches. Merging what you like
+is your job: `git merge thrawn/swarm/COS-2101` and on you go.
 
 ## In action
 

@@ -251,6 +251,25 @@ thrawn                 # bare = picks up ./THRAWN.md
 Briefs beat tickets when you know things the tracker doesn't: which modules
 are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 
+## Variant: swarm — thrawn sets up, you orchestrate
+
+Sometimes you don't want a plan, you want three agents on three tickets
+*right now*, with you deciding what merges:
+
+```bash
+thrawn swarm COS-2101 COS-2102 COS-2103 --runner codex
+```
+
+Each issue gets its own worktree (branch `thrawn/swarm/<issue>`) and its
+own pane labelled with the issue id, with the chosen runner started on it.
+The panes collect in an **`agents` tab** in your current workspace —
+created if it doesn't exist, reused if it does, so every swarm's agents
+live in one predictable place. No planner, no integrator, no ship code —
+review with `thrawn diff swarm COS-2101`, merge the branches you like by
+hand, `thrawn abort swarm` to clean up. `thrawn status swarm` still shows
+the board, and an agent that exits without committing is flagged as failed
+just like in an orchestrated run.
+
 ## Cheat sheet
 
 | Moment | Command |
@@ -260,6 +279,7 @@ are involved, what's out of scope, "the CSS is trivial, route it to haiku".
 | Normal dispatch | `thrawn 42` — shows the plan, asks before executing |
 | Confident dispatch | `thrawn 42 --yes` — no approval prompt |
 | Plan doesn't decompose | width < min_width → handoff: `claude "implement .thrawn/runs/gh-42/plan.json"` |
+| No plan, just agents | `thrawn swarm COS-1 COS-2 [--runner codex]` — worktree + pane per issue, you orchestrate |
 | Execute anyway | `thrawn watch gh-42` — overrides the width verdict |
 | Re-run `thrawn 42` | resumes the most advanced open run — never re-plans (`--new` forces fresh) |
 | See a saved plan | `thrawn plan gh-42 --full` |

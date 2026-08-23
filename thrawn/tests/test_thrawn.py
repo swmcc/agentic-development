@@ -819,3 +819,191 @@ class TestRecoveryEndToEnd:
         wt = Path(after["integration"]["worktree"])
         assert (wt / "shy.txt").exists()
         assert (wt / f"thrawn-{rid}-t2.txt").exists()
+
+
+# ---------------------------------------------------------------------------
+# Swarm — automated environment setup, manual orchestration
+# ---------------------------------------------------------------------------
+
+class TestSwarmIntake:
+    def test_jira_style_key_becomes_label(self, T, repo):
+        intake = T.swarm_intake(repo, "COS-2101")
+        assert intake["kind"] == "label"
+        assert intake["ref"] == "COS-2101"
+        assert "COS-2101" in intake["text"]
+
+    def test_issue_number_without_remote_becomes_label(self, T, repo):
+        # resolve_target would die here; swarm intake must not
+        assert T.swarm_intake(repo, "42")["kind"] == "label"
+
+    def test_markdown_brief_is_read(self, T, repo):
+        brief = repo / "b.md"
+        brief.write_text("# Fix the flux capacitor\n\ndetails\n")
+        intake = T.swarm_intake(repo, str(brief))
+        assert intake["kind"] == "brief"
+        assert intake["title"] == "Fix the flux capacitor"
+
+
+def fake_herdr(responses):
+    """A try_run stand-in keyed on the herdr subcommand ('pane current',
+    'tab list', 'tab create'); None means the command fails."""
+    def _run(argv, **kw):
+        key = " ".join(argv[1:3])
+        if key not in responses or responses[key] is None:
+            return None
+        return SimpleNamespace(returncode=0, stdout=responses[key], stderr="")
+    return _run
+
+
+class TestSwarmSpawner:
+    def test_fixed_tab_is_used_verbatim(self, T):
+        spawner = T.HerdrSpawner(tab="w1:t5")
+        assert spawner._run_tab() == "w1:t5"
+        # splitting, not root-taking, and no run-tab bookkeeping
+        assert spawner._fresh is False
+        assert "herdr_tab" not in spawner.state
+
+    def test_fresh_tab_gives_first_agent_the_root_pane(self, T):
+        assert T.HerdrSpawner(tab="w1:t5", tab_fresh=True)._fresh is True
+        # tab_fresh without a tab is meaningless and must not stick
+        assert T.HerdrSpawner(tab_fresh=True)._fresh is False
+
+    def test_labeled_tab_found_by_label(self, T, monkeypatch):
+        monkeypatch.setattr(T, "try_run", fake_herdr({
+            "pane current": '{"pane":{"tab_id":"w2:t1","workspace_id":"w2"}}',
+            "tab list": '{"result":{"tabs":['
+                        '{"label":"Git","tab_id":"w2:t2"},'
+                        '{"label":"agents","tab_id":"w2:t7"}]}}',
+        }))
+        assert T.herdr_labeled_tab("agents") == ("w2:t7", False)
+
+    def test_labeled_tab_created_when_missing(self, T, monkeypatch):
+        monkeypatch.setattr(T, "try_run", fake_herdr({
+            "pane current": '{"pane":{"workspace_id":"w2"}}',
+            "tab list": '{"result":{"tabs":[{"label":"Git","tab_id":"w2:t2"}]}}',
+            "tab create": '{"result":{"tab_id":"w2:t9"}}',
+        }))
+        assert T.herdr_labeled_tab("agents") == ("w2:t9", True)
+
+    def test_labeled_tab_none_outside_herdr(self, T, monkeypatch):
+        monkeypatch.setattr(T, "try_run", fake_herdr({}))
+        assert T.herdr_labeled_tab("agents") == (None, False)
+
+
+class TestSwarmGuards:
+    def seed_swarm(self, T, repo, **over):
+        return seed_state(
+            T, repo, phase="swarm", mode="swarm",
+            target={"kind": "swarm", "ref": "COS-1", "title": "swarm: COS-1"},
+            tasks={"COS-1": {"status": "failed"}},
+            integration={},
+        )
+
+    def test_watch_refuses_swarm(self, T, tmp_path):
+        state = self.seed_swarm(T, tmp_path)
+        with pytest.raises(SystemExit):
+            T.watch(tmp_path, base_cfg(T), state)
+
+    def test_integrate_refuses_swarm(self, T, tmp_path):
+        state = self.seed_swarm(T, tmp_path)
+        with pytest.raises(SystemExit):
+            T.integrate(tmp_path, base_cfg(T), state)
+
+    def test_retry_refuses_swarm(self, T, tmp_path):
+        self.seed_swarm(T, tmp_path)
+        with pytest.raises(SystemExit):
+            T.cmd_retry(tmp_path, base_cfg(T), "r1", [])
+
+    def test_adopt_refuses_swarm(self, T, tmp_path):
+        self.seed_swarm(T, tmp_path)
+        with pytest.raises(SystemExit):
+            T.cmd_adopt(tmp_path, base_cfg(T), "r1", ["COS-1"])
+
+
+class TestSwarmValidation:
+    def test_unknown_runner_refused(self, T, repo):
+        cfg = base_cfg(T)
+        with pytest.raises(SystemExit):
+            T.cmd_swarm(repo, cfg, ["COS-1"], runner="gpt9000")
+
+    def test_duplicate_issues_refused(self, T, repo):
+        cfg = base_cfg(T)
+        cfg["runners"]["opus"] = {"argv": ["true"]}
+        with pytest.raises(SystemExit):
+            T.cmd_swarm(repo, cfg, ["COS-1", "COS-1"])
+
+    def test_id_sanitised_to_empty_refused(self, T, repo):
+        cfg = base_cfg(T)
+        cfg["runners"]["opus"] = {"argv": ["true"]}
+        with pytest.raises(SystemExit):
+            T.cmd_swarm(repo, cfg, ["///"])
+
+
+@pytest.fixture(scope="module")
+def swarm(T, tmp_path_factory):
+    """A two-issue swarm with fake runners, settled to completion."""
+    mp = pytest.MonkeyPatch()
+    mp.setenv("THRAWN_NO_HERDR", "1")
+    root = tmp_path_factory.mktemp("swarm")
+    repo = init_repo(root / "repo")
+    (repo / ".thrawn.toml").write_text(THRAWN_TOML)
+    cfg = T.load_config(repo)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
+    T.cmd_swarm(repo, cfg, ["COS-2101", "COS-2102"])  # default runner: fakework
+    state = T.latest_run(repo)
+    for _ in range(100):
+        T.poll_tasks(repo, state)
+        if all(ts["status"] != "running" for ts in state["tasks"].values()):
+            break
+        time.sleep(0.05)
+    T.save_state(repo, state)
+    yield SimpleNamespace(repo=repo, cfg=cfg, state=state)
+    shutil.rmtree(T.worktree_base(repo), ignore_errors=True)
+    mp.undo()
+
+
+class TestSwarmEndToEnd:
+    def test_state_is_a_swarm_run(self, swarm):
+        assert swarm.state["run_id"] == "swarm"
+        assert swarm.state["mode"] == "swarm"
+        assert swarm.state["phase"] == "swarm"
+
+    def test_one_worktree_and_branch_per_issue(self, swarm):
+        for tid in ("COS-2101", "COS-2102"):
+            ts = swarm.state["tasks"][tid]
+            assert ts["branch"] == f"thrawn/swarm/{tid}"
+            assert Path(ts["worktree"]).exists()
+
+    def test_agents_ran_and_committed(self, swarm):
+        for tid in ("COS-2101", "COS-2102"):
+            ts = swarm.state["tasks"][tid]
+            assert ts["status"] == "done"
+            count = g("rev-list", "--count",
+                      f"{swarm.state['base_commit']}..{ts['branch']}",
+                      cwd=swarm.repo).stdout.strip()
+            assert count == "1"
+
+    def test_plan_json_written_for_status_and_diff(self, T, swarm):
+        plan = json.loads(
+            (T.run_dir(swarm.repo, "swarm") / "plan.json").read_text())
+        assert [t["id"] for t in plan["tasks"]] == ["COS-2101", "COS-2102"]
+        assert plan["tasks"][0]["runner"] == "fakework"
+
+    def test_status_board_renders_swarm(self, T, swarm, capfd):
+        T.cmd_status(swarm.repo, "swarm")
+        out = capfd.readouterr().out
+        assert "COS-2101" in out and "COS-2102" in out
+        assert "you are the orchestrator" in out
+
+    def test_second_swarm_gets_unique_run_id(self, T, swarm):
+        assert T.unique_run_id(swarm.repo, "swarm") == "swarm-2"
+
+    def test_abort_cleans_swarm(self, T, swarm):
+        T.cmd_abort(swarm.repo, "swarm")
+        after = T.load_state(swarm.repo, "swarm")
+        assert after["phase"] == "aborted"
+        for ts in after["tasks"].values():
+            assert not Path(ts["worktree"]).exists()
+        branches = g("branch", "--list", "thrawn/swarm/*",
+                     cwd=swarm.repo).stdout
+        assert branches.strip() == ""
