@@ -17,6 +17,7 @@ recon_max_age_commits = 50    # staleness threshold for the cached repo brief
 auto_recon = true             # dispatch runs recon first when no cache exists
 auto_fix = false              # ask before dispatching integrator agents (no silent fixing)
 allow_no_checks = false       # never declare green with zero checks configured
+swarm_tab = "agents"          # herdr tab that `thrawn swarm` panes collect in
 
 [checks]
 # Ran in the integration worktree after merging. Empty = auto-detect from

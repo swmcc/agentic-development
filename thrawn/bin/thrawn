@@ -198,6 +198,7 @@ def load_config(repo: Path) -> dict:
             "allow_no_checks": False,  # green with zero checks? never silently.
             "min_width": 2.0,    # tasks/critical-path below this → hand off to
                                  # a single-agent session instead of executing
+            "swarm_tab": "agents",  # herdr tab swarm panes are collected in
         },
         "checks": {"commands": []},
         "worktree": {"setup": ""},
@@ -697,18 +698,58 @@ def _first_match(pattern: str, text: str):
     return m.group(1) if m else None
 
 
+def herdr_labeled_tab(label: str):
+    """Find (or create) the tab called `label` in the workspace thrawn was
+    invoked from. Returns (tab_id, created) — (None, False) when the
+    workspace can't be determined (not inside a herdr pane)."""
+    proc = try_run(["herdr", "pane", "current"], timeout=5)
+    workspace = _first_match(
+        r'"workspace_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
+    )
+    if not workspace:
+        return None, False
+    proc = try_run(["herdr", "tab", "list", "--workspace", workspace], timeout=5)
+    try:
+        tabs = json.loads(proc.stdout)["result"]["tabs"] if proc else []
+    except (json.JSONDecodeError, KeyError, TypeError):
+        tabs = []
+    for tab in tabs:
+        if tab.get("label") == label:
+            return tab.get("tab_id"), False
+    proc = try_run(
+        ["herdr", "tab", "create", "--workspace", workspace,
+         "--label", label, "--no-focus"],
+        timeout=10,
+    )
+    tab = _first_match(
+        r'"tab_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
+    )
+    return tab, bool(tab)
+
+
 class HerdrSpawner:
     """One ⚔ tab per run in the workspace thrawn was launched from; every
     agent of the run — tasks and integrators — stacks as a split pane
-    inside it, so the whole run is visible on one screen."""
+    inside it, so the whole run is visible on one screen.
 
-    def __init__(self, repo=None, state=None):
+    With `tab` set, no run tab is created: every agent goes into that
+    existing tab instead (swarm mode uses a shared `agents` tab).
+    `tab_fresh=True` means the tab was just created for us — its empty
+    root pane takes the first agent instead of splitting."""
+
+    def __init__(self, repo=None, state=None, tab=None, tab_fresh=False):
         self.repo = repo
         self.state = state if state is not None else {}
-        self._fresh = False  # just created the tab; first agent takes root pane
+        self.fixed_tab = tab
+        # _fresh: first agent takes the tab's root pane instead of splitting
+        self._fresh = bool(tab) and tab_fresh
 
     def _run_tab(self):
         """Find (or create) this run's tab; returns its id, or None."""
+        if self.fixed_tab:
+            # a tab was chosen for us — never create a run tab; splitting
+            # vs taking the root pane is governed by tab_fresh
+            return self.fixed_tab
         tab = self.state.get("herdr_tab")
         if tab:
             proc = try_run(["herdr", "tab", "get", tab], timeout=5)
@@ -792,10 +833,10 @@ class LocalSpawner:
                 pass
 
 
-def make_spawner(repo=None, state=None):
+def make_spawner(repo=None, state=None, tab=None, tab_fresh=False):
     if not herdr_available():
         return LocalSpawner()
-    return HerdrSpawner(repo, state)
+    return HerdrSpawner(repo, state, tab=tab, tab_fresh=tab_fresh)
 
 
 def notify(title: str, sound: str = "done") -> None:
@@ -839,7 +880,7 @@ def setup_worktree(repo: Path, cfg: dict, run_id: str, worktree: Path, tag: str)
              f"continuing, checks may catch it{RESET}")
 
 
-def spawn_task(repo, cfg, state, plan, task, spawner):
+def spawn_task(repo, cfg, state, plan, task, spawner, prompt_file="executor.md"):
     run_id = state["run_id"]
     tid = task["id"]
     branch = f"thrawn/{run_id}/{tid}"
@@ -852,7 +893,7 @@ def spawn_task(repo, cfg, state, plan, task, spawner):
     setup_worktree(repo, cfg, run_id, worktree, tid)
 
     prompt = render(
-        load_prompt("executor.md"),
+        load_prompt(prompt_file),
         run_id=run_id,
         task_id=tid,
         task_title=task["title"],
@@ -1014,13 +1055,26 @@ def render_board(repo: Path, state: dict, plan: dict, clear: bool = False) -> No
         print(f"  {DIM}fix things, then: thrawn integrate {state['run_id']}{RESET}")
     elif state["phase"] == "shipped":
         print(f"  {GREEN}{BOLD}SHIPPED{RESET}  {state.get('pr_url', '')}")
+    elif state["phase"] == "swarm":
+        print(f"  {DIM}swarm — you are the orchestrator: review with "
+              f"`thrawn diff {state['run_id']} <issue>`, merge/ship by hand, "
+              f"`thrawn abort {state['run_id']}` to clean up{RESET}")
     elif state["phase"] in ("planned", "aborted"):
         print(f"  {DIM}phase: {state['phase']}{RESET}")
     else:
         print(f"  {DIM}watching … ctrl-c is safe; resume with `thrawn watch {state['run_id']}`{RESET}")
 
 
+def forbid_swarm(state: dict, verb: str) -> None:
+    """Swarm runs are manually orchestrated — the automated lifecycle
+    (watch/integrate/retry/adopt) must never touch them."""
+    if state.get("mode") == "swarm":
+        die(f"{state['run_id']} is a swarm run — you are the orchestrator, "
+            f"thrawn will not {verb} it. status/diff/abort still work")
+
+
 def watch(repo: Path, cfg: dict, state: dict) -> None:
+    forbid_swarm(state, "orchestrate")
     plan = json.loads((run_dir(repo, state["run_id"]) / "plan.json").read_text())
     spawner = make_spawner(repo, state)
     poll = cfg["thrawn"]["poll_seconds"]
@@ -1151,6 +1205,7 @@ def baseline_check(repo: Path, cfg: dict, state: dict, cmd: str):
 
 
 def integrate(repo: Path, cfg: dict, state: dict) -> None:
+    forbid_swarm(state, "integrate")
     run_id = state["run_id"]
     plan = json.loads((run_dir(repo, run_id) / "plan.json").read_text())
     state["phase"] = "integrating"
@@ -1533,6 +1588,7 @@ def cmd_retry(repo: Path, cfg: dict, run_ref, task_ids,
     integration retry when nothing failed at the task level."""
     state = load_state(repo, run_ref) if run_ref else latest_run(repo)
     rid = state["run_id"]
+    forbid_swarm(state, "retry")
     if state["phase"] in ("shipped", "aborted"):
         die(f"run {rid} is {state['phase']}")
     if runner and runner not in cfg["runners"]:
@@ -1590,6 +1646,7 @@ def cmd_adopt(repo: Path, cfg: dict, run_ref, task_ids) -> None:
     worktree, verify the branch actually has commits, mark done, resume."""
     state = load_state(repo, run_ref) if run_ref else latest_run(repo)
     rid = state["run_id"]
+    forbid_swarm(state, "adopt into")
     if state["phase"] in ("shipped", "aborted"):
         die(f"run {rid} is {state['phase']}")
 
@@ -1788,6 +1845,90 @@ def dispatch(repo: Path, cfg: dict, target, plan_only: bool,
 
 
 # ---------------------------------------------------------------------------
+# Swarm — automated environment setup, manual orchestration
+# ---------------------------------------------------------------------------
+
+def swarm_intake(repo: Path, ref: str) -> dict:
+    """Tolerant intake for swarm issues. Unlike resolve_target this never
+    dies: a tracker number without a gh/glab remote, or a Jira-style key
+    like COS-2101, becomes an opaque label the agent works from."""
+    if re.fullmatch(r"#?\d+", ref) and detect_host(repo)[0]:
+        return fetch_issue(repo, ref.lstrip("#"))
+    path = Path(ref)
+    if path.suffix == ".md" and path.exists():
+        return read_brief(path)
+    return {
+        "kind": "label", "ref": ref, "title": ref,
+        "text": f"# {ref}\n\nthrawn has no tracker integration for this id. "
+                "If the repo has tooling to look it up (CLI, MCP, API), do "
+                "so; otherwise work from the id and what the codebase tells "
+                "you, and say so in your commit message.",
+    }
+
+
+def cmd_swarm(repo: Path, cfg: dict, issues, runner=None) -> None:
+    """thrawn swarm ISSUE [ISSUE…] — one worktree + pane + agent per issue,
+    in the current herdr tab. No planner, no integrator, no ship flow:
+    the human is the orchestrator."""
+    ensure_git_exclude(repo)
+    runner = runner or cfg["thrawn"]["default_runner"]
+    if runner_argv(cfg, runner, "x") is None:
+        die(f"runner `{runner}` not defined in runners.toml")
+    tids = [re.sub(r"[^A-Za-z0-9_.-]+", "-", ref).strip("-") for ref in issues]
+    if not all(tids):
+        die("issue ids must be non-empty")
+    if len(set(tids)) != len(tids):
+        die("duplicate issue ids")
+
+    base_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                      cwd=repo).stdout.strip()
+    base_commit = run(["git", "rev-parse", "HEAD"], cwd=repo).stdout.strip()
+    intakes = [swarm_intake(repo, ref) for ref in issues]
+    run_id = unique_run_id(repo, "swarm")
+    plan = {
+        "summary": "swarm: " + ", ".join(issues),
+        "tasks": [
+            {"id": tid, "title": intake["title"][:60], "runner": runner,
+             "complexity": "-", "deps": [], "prompt": intake["text"]}
+            for tid, intake in zip(tids, intakes)
+        ],
+    }
+    state = {
+        "run_id": run_id,
+        "created": now_iso(),
+        "phase": "swarm",
+        "mode": "swarm",
+        "target": {"kind": "swarm", "ref": " ".join(issues),
+                   "title": plan["summary"]},
+        "base_branch": base_branch,
+        "base_commit": base_commit,
+        "tasks": {},
+    }
+    save_state(repo, state)
+    (run_dir(repo, run_id) / "plan.json").write_text(json.dumps(plan, indent=2))
+
+    # panes collect in a shared tab (default label: agents) in the
+    # workspace thrawn was invoked from — no per-run ⚔ tab is created
+    tab_label = cfg["thrawn"]["swarm_tab"]
+    tab, fresh = (herdr_labeled_tab(tab_label)
+                  if herdr_available() else (None, False))
+    if herdr_available() and not tab:
+        info(f"{YELLOW}couldn't find or create a `{tab_label}` tab — panes "
+             f"will open in a ⚔ {run_id} tab instead{RESET}")
+    spawner = make_spawner(repo, state, tab=tab, tab_fresh=fresh)
+
+    info(f"swarm {BOLD}{run_id}{RESET}: {len(tids)} issue(s), "
+         f"runner {BOLD}{runner}{RESET}, base {base_branch} @ {base_commit[:8]}")
+    for task in plan["tasks"]:
+        spawn_task(repo, cfg, state, plan, task, spawner, prompt_file="swarm.md")
+        info(f"  ⚔ {task['id']}  branch {state['tasks'][task['id']]['branch']}  "
+             f"{DIM}{state['tasks'][task['id']]['worktree']}{RESET}")
+    info(f"you are the orchestrator — review with `thrawn diff {run_id} "
+         f"<issue>`, merge and ship by hand. `thrawn status {run_id}` shows "
+         f"the board; `thrawn abort {run_id}` cleans everything up")
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
@@ -1800,6 +1941,10 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
                                 agent spawns — skip the prompt with --yes;
                                 an open run for the same target is resumed,
                                 never re-planned — force fresh with --new)
+  thrawn swarm <id> [id…]      lightweight mode: one worktree + pane + agent
+                               per issue, collected in an `agents` herdr tab
+                               — no planner, no integrator, no ship flow;
+                               YOU orchestrate (--runner X picks the agent)
   thrawn plan <target>         plan only (review before executing)
   thrawn plan <run>            re-show the saved plan of an existing run
   thrawn plan <run> --full     the whole plan: every prompt verbatim, PR body
@@ -1874,6 +2019,12 @@ def main() -> None:
 
     if sub == "recon":
         cmd_recon(repo, cfg)
+    elif sub == "swarm":
+        parser = argparse.ArgumentParser(prog="thrawn swarm")
+        parser.add_argument("issues", nargs="+")
+        parser.add_argument("--runner")
+        ns = parser.parse_args(args[1:])
+        cmd_swarm(repo, cfg, ns.issues, ns.runner)
     elif sub == "plan":
         flags = [a for a in args[1:] if a.startswith("--")]
         rest = [a for a in args[1:] if not a.startswith("--")]

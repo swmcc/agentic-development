@@ -132,11 +132,13 @@ setup-workspaces: ## Create all workspaces using herdr-spreader
 .PHONY: setup-thrawn
 setup-thrawn: ## Install the thrawn orchestrator CLI
 	@echo "$(GREEN)Setting up thrawn...$(RESET)"
-	@mkdir -p $(HOME)/.local/bin
+	@mkdir -p $(HOME)/.local/bin $(HOME)/bin
 	@chmod +x $(REPO_DIR)/thrawn/bin/thrawn
 	@ln -sf $(REPO_DIR)/thrawn/bin/thrawn $(HOME)/.local/bin/thrawn
+	@ln -sf $(REPO_DIR)/thrawn/bin/thrawn $(HOME)/bin/thrawn
 	@echo "$(GREEN)thrawn linked:$(RESET)"
 	@echo "  $(YELLOW)~/.local/bin/thrawn$(RESET)"
+	@echo "  $(YELLOW)~/bin/thrawn$(RESET)"
 	@case ":$$PATH:" in \
 		*":$(HOME)/.local/bin:"*) ;; \
 		*) echo "$(RED)~/.local/bin is not on your PATH — add it to your shell rc$(RESET)" ;; \
@@ -191,6 +193,7 @@ unlink: ## Remove all symlinks (keeps tools installed)
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
 	@for s in $(REPO_DIR)/skills/*/; do rm -f $(CLAUDE_SKILLS_DIR)/$$(basename "$$s"); done
 	@rm -f $(HOME)/.local/bin/thrawn
+	@rm -f $(HOME)/bin/thrawn
 	@echo "$(GREEN)Symlinks removed$(RESET)"
 
 .PHONY: uninstall
@@ -227,6 +230,7 @@ status: ## Show installation status
 	@echo ""
 	@echo "$(YELLOW)Thrawn:$(RESET)"
 	@printf "  thrawn CLI:     "; [ -L $(HOME)/.local/bin/thrawn ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
+	@printf "  thrawn ~/bin:   "; [ -L $(HOME)/bin/thrawn ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 
 # ============================================================================
 # 📖 Help
