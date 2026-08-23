@@ -781,24 +781,69 @@ class HerdrSpawner:
             info(f"herdr tab {BOLD}⚔ {run_id}{RESET} — agents stack there as panes")
         return tab
 
+    def _tab_panes(self, tab):
+        """Pane ids currently in `tab`, in herdr's listing order."""
+        argv = ["herdr", "pane", "list"]
+        if ":" in tab:
+            argv += ["--workspace", tab.split(":")[0]]
+        proc = try_run(argv, timeout=5)
+        try:
+            panes = json.loads(proc.stdout)["result"]["panes"] if proc else []
+        except (json.JSONDecodeError, KeyError, TypeError):
+            panes = []
+        return [p["pane_id"] for p in panes
+                if p.get("tab_id") == tab and p.get("pane_id")]
+
+    def _spawn_pane(self, tab, cwd, cmdline, fresh):
+        """Modern herdr flow: `pane split --cwd` + `pane run`. A fresh tab's
+        empty root pane takes the command directly (with a cd first, since
+        only split honours --cwd). Returns the pane id, or None."""
+        anchors = self._tab_panes(tab)
+        if not anchors:
+            return None
+        if fresh:
+            pane = anchors[0]
+            cmdline = f"cd {shlex.quote(str(cwd))} || exit 1; {cmdline}"
+        else:
+            proc = try_run(["herdr", "pane", "split", anchors[-1],
+                            "--direction", "down", "--cwd", str(cwd),
+                            "--no-focus"], timeout=10)
+            pane = _first_match(r'"pane_id"\s*:\s*"([^"]+)"',
+                                (proc.stdout if proc else "") or "")
+            if not pane:
+                return None
+        # a just-split pane's shell may not be ready instantly — retry briefly
+        for _ in range(5):
+            proc = try_run(["herdr", "pane", "run", pane,
+                            "bash", "-lc", cmdline], timeout=10)
+            if proc and proc.returncode == 0:
+                return pane
+            time.sleep(0.4)
+        return None
+
     def spawn(self, name, label, cwd, cmdline):
         tab = self._run_tab()
+        fresh, self._fresh = self._fresh, False
+        # older herdr: `agent start` created the pane itself
         argv = ["herdr", "agent", "start", name, "--cwd", str(cwd), "--no-focus"]
         if tab:
             argv += ["--tab", tab]
-            if not self._fresh:
+            if not fresh:
                 # the fresh tab's root pane takes the first agent;
                 # everyone after that stacks below it
                 argv += ["--split", "down"]
-            self._fresh = False
         argv += ["--", "bash", "-lc", cmdline]
         proc = try_run(argv, timeout=15)
         out = ((proc.stdout or "") + (proc.stderr or "")) if proc else ""
         pane = _first_match(r'"(?:pane_id|terminal_id)"\s*:\s*"([^"]+)"', out)
         if proc is None or proc.returncode != 0:
-            info(f"{YELLOW}herdr refused to open a pane for {label} — running "
-                 f"headless; output only in the run logs{RESET}")
-            return LocalSpawner().spawn(name, label, cwd, cmdline)
+            # newer herdr dropped that form (`agent start` now wants an
+            # existing pane via --kind/--pane) — make the pane ourselves
+            pane = self._spawn_pane(tab, cwd, cmdline, fresh) if tab else None
+            if not pane:
+                info(f"{YELLOW}herdr refused to open a pane for {label} — running "
+                     f"headless; output only in the run logs{RESET}")
+                return LocalSpawner().spawn(name, label, cwd, cmdline)
         if pane:
             try_run(["herdr", "pane", "rename", pane, label], timeout=5)
         return {"via": "herdr", "pane": pane, "tab": tab}

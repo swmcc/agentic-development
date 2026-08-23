@@ -890,6 +890,75 @@ class TestSwarmSpawner:
         assert T.herdr_labeled_tab("agents") == (None, False)
 
 
+class TestSpawnFallback:
+    """Newer herdr dropped `agent start --cwd/--tab/--split`; spawn must
+    fall back to `pane split` + `pane run` before going headless."""
+
+    PANES = ('{"result":{"panes":['
+             '{"pane_id":"w1:p1","tab_id":"w1:t5"},'
+             '{"pane_id":"w1:p2","tab_id":"w1:t5"},'
+             '{"pane_id":"w1:p9","tab_id":"w1:t1"}]}}')
+
+    def _recording(self, T, monkeypatch, responses):
+        calls = []
+        stub = fake_herdr(responses)
+
+        def _run(argv, **kw):
+            calls.append([str(a) for a in argv])
+            return stub(argv, **kw)
+
+        monkeypatch.setattr(T, "try_run", _run)
+        return calls
+
+    def test_old_agent_start_form_still_wins(self, T, monkeypatch):
+        self._recording(T, monkeypatch, {
+            "agent start": '{"pane_id":"w1:p7"}',
+            "pane rename": "{}",
+        })
+        h = T.HerdrSpawner(tab="w1:t5").spawn("n", "l", "/tmp", "true")
+        assert h == {"via": "herdr", "pane": "w1:p7", "tab": "w1:t5"}
+
+    def test_falls_back_to_pane_split_plus_run(self, T, monkeypatch):
+        calls = self._recording(T, monkeypatch, {
+            "agent start": None,  # unknown option: --cwd
+            "pane list": self.PANES,
+            "pane split": '{"result":{"pane_id":"w1:p3"}}',
+            "pane run": "{}",
+            "pane rename": "{}",
+        })
+        h = T.HerdrSpawner(tab="w1:t5").spawn("n", "⚔ COS-1", "/tmp", "true")
+        assert h["via"] == "herdr"
+        assert h["pane"] == "w1:p3"
+        split = next(a for a in calls if a[1:3] == ["pane", "split"])
+        assert split[3] == "w1:p2"  # bottom-most pane of the RIGHT tab
+        assert "--cwd" in split
+        run_cmd = next(a for a in calls if a[1:3] == ["pane", "run"])
+        assert run_cmd[3] == "w1:p3"
+        rename = next(a for a in calls if a[1:3] == ["pane", "rename"])
+        assert rename[3:] == ["w1:p3", "⚔ COS-1"]
+
+    def test_fresh_tab_root_pane_takes_the_command(self, T, monkeypatch):
+        calls = self._recording(T, monkeypatch, {
+            "agent start": None,
+            "pane list": '{"result":{"panes":'
+                         '[{"pane_id":"w1:p1","tab_id":"w1:t5"}]}}',
+            "pane run": "{}",
+            "pane rename": "{}",
+        })
+        h = T.HerdrSpawner(tab="w1:t5", tab_fresh=True).spawn(
+            "n", "l", "/w t", "true")
+        assert h["pane"] == "w1:p1"
+        assert not any(a[1:3] == ["pane", "split"] for a in calls)
+        run_cmd = next(a for a in calls if a[1:3] == ["pane", "run"])
+        assert "cd '/w t'" in run_cmd[-1]  # cwd honoured, quoted
+
+    def test_total_failure_goes_headless(self, T, monkeypatch):
+        monkeypatch.setattr(T, "try_run", fake_herdr({}))
+        monkeypatch.setattr(T.time, "sleep", lambda s: None)
+        h = T.HerdrSpawner(tab="w1:t5").spawn("n", "l", "/tmp", "true")
+        assert h["via"] == "local"
+
+
 class TestSwarmGuards:
     def seed_swarm(self, T, repo, **over):
         return seed_state(
