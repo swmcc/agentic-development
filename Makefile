@@ -11,6 +11,15 @@ CLAUDE_SKILLS_DIR := $(HOME)/.claude/skills
 LOCAL_BIN := $(HOME)/.local/bin
 REPO_DIR := $(shell pwd)
 
+# Machine-local overrides. When either exists it replaces the committed config
+# outright — nothing is merged — so a work machine can carry a private repo list
+# and its own keybindings without either landing in git.
+LOCAL_REPOS := $(HERDR_CONFIG_DIR)/repos.local.yaml
+LOCAL_CONFIG := $(HERDR_CONFIG_DIR)/config.local.toml
+
+# Directory scanned by `make repos-local`.
+CODE_DIR ?= $(HOME)/Documents/Code
+
 .DEFAULT_GOAL := help
 
 # ============================================================================
@@ -78,22 +87,33 @@ install-deps: ## Install brew and cargo if missing
 # ============================================================================
 
 .PHONY: setup-config
-setup-config: ## Symlink herdr config files
+setup-config: ## Symlink herdr config files (machine-local overrides win)
 	@echo "$(GREEN)Setting up herdr configuration...$(RESET)"
 	@mkdir -p $(HERDR_CONFIG_DIR)
-	@ln -sf $(REPO_DIR)/herdr/config.toml $(HERDR_CONFIG_DIR)/config.toml
-	@ln -sf $(REPO_DIR)/herdr/spreader.yaml $(HERDR_CONFIG_DIR)/spreader.yaml
+	@if [ -f $(LOCAL_CONFIG) ]; then \
+		ln -sf $(LOCAL_CONFIG) $(HERDR_CONFIG_DIR)/config.toml; \
+		echo "  $(YELLOW)~/.config/herdr/config.toml$(RESET) -> config.local.toml $(GREEN)(machine-local)$(RESET)"; \
+	else \
+		ln -sf $(REPO_DIR)/herdr/config.toml $(HERDR_CONFIG_DIR)/config.toml; \
+		echo "  $(YELLOW)~/.config/herdr/config.toml$(RESET) -> repo herdr/config.toml"; \
+	fi
+	@if [ -f $(LOCAL_REPOS) ]; then \
+		ln -sf $(LOCAL_REPOS) $(HERDR_CONFIG_DIR)/spreader.yaml; \
+		echo "  $(YELLOW)~/.config/herdr/spreader.yaml$(RESET) -> repos.local.yaml $(GREEN)(machine-local)$(RESET)"; \
+	else \
+		ln -sf $(REPO_DIR)/herdr/spreader.yaml $(HERDR_CONFIG_DIR)/spreader.yaml; \
+		echo "  $(YELLOW)~/.config/herdr/spreader.yaml$(RESET) -> repo herdr/spreader.yaml"; \
+	fi
 	@ln -sf $(REPO_DIR)/herdr/scripts/setup-spaces.sh $(HERDR_CONFIG_DIR)/setup-spaces.sh
 	@ln -sf $(REPO_DIR)/herdr/scripts/setup-tabs.sh $(HERDR_CONFIG_DIR)/setup-tabs.sh
 	@mkdir -p $(LOCAL_BIN)
 	@ln -sf $(REPO_DIR)/herdr/scripts/scaffold-workspace.sh $(LOCAL_BIN)/herdr-scaffold-workspace
+	@ln -sf $(REPO_DIR)/herdr/scripts/gen-spreader.sh $(LOCAL_BIN)/herdr-gen-spreader
 	@chmod +x $(REPO_DIR)/herdr/scripts/*.sh
-	@echo "$(GREEN)Config symlinks created:$(RESET)"
-	@echo "  $(YELLOW)~/.config/herdr/config.toml$(RESET)"
-	@echo "  $(YELLOW)~/.config/herdr/spreader.yaml$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/setup-spaces.sh$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/setup-tabs.sh$(RESET)"
 	@echo "  $(YELLOW)~/.local/bin/herdr-scaffold-workspace$(RESET)"
+	@echo "  $(YELLOW)~/.local/bin/herdr-gen-spreader$(RESET)"
 
 .PHONY: setup-hooks
 setup-hooks: ## Symlink agent integration hooks
@@ -128,6 +148,37 @@ setup-workspaces: ## Create all workspaces using herdr-spreader
 		echo "$(RED)herdr-spreader not found. Run 'make install-spreader' first$(RESET)"; \
 		exit 1; \
 	fi
+
+# ============================================================================
+# 🗂  Repo list
+# ============================================================================
+
+.PHONY: repos
+repos: ## Show the workspace list currently in effect
+	@src=$$(bash $(REPO_DIR)/herdr/scripts/resolve-repos.sh --source) || exit 1; \
+	file=$$(bash $(REPO_DIR)/herdr/scripts/resolve-repos.sh) || exit 1; \
+	case "$$src" in \
+		env)   echo "$(GREEN)Source:$(RESET) \$$HERDR_REPOS" ;; \
+		local) echo "$(GREEN)Source:$(RESET) machine-local" ;; \
+		repo)  echo "$(GREEN)Source:$(RESET) committed personal list" ;; \
+	esac; \
+	echo "$(GREEN)File:$(RESET)   $$file"; \
+	echo ""; \
+	bash $(REPO_DIR)/herdr/scripts/resolve-repos.sh --entries \
+		| while IFS="$$(printf '\t')" read -r label path; do \
+			if [ -d "$$path" ]; then mark="$(GREEN)✓$(RESET)"; else mark="$(RED)✗$(RESET)"; fi; \
+			printf "  %b %-30s %s\n" "$$mark" "$$label" "$$path"; \
+		done
+	@echo ""
+	@echo "$(YELLOW)✗ = directory not present on this machine (skipped at setup)$(RESET)"
+
+.PHONY: repos-local
+repos-local: ## Generate a machine-local repo list by scanning CODE_DIR
+	@echo "$(GREEN)Scanning $(CODE_DIR)...$(RESET)"
+	@bash $(REPO_DIR)/herdr/scripts/gen-spreader.sh --scan $(CODE_DIR) -o $(LOCAL_REPOS) --force
+	@$(MAKE) --no-print-directory setup-config
+	@echo ""
+	@echo "$(YELLOW)Review $(LOCAL_REPOS), then run 'make setup-workspaces'$(RESET)"
 
 .PHONY: setup-thrawn
 setup-thrawn: ## Install the thrawn orchestrator CLI
@@ -182,13 +233,16 @@ update-spreader: ## Update herdr-spreader to latest version
 # ============================================================================
 
 .PHONY: unlink
-unlink: ## Remove all symlinks (keeps tools installed)
+unlink: ## Remove all symlinks (keeps tools and machine-local configs)
 	@echo "$(YELLOW)Removing symlinks...$(RESET)"
+	@# repos.local.yaml and config.local.toml are deliberately left alone — they
+	@# are yours, not ours, and nothing in the repo can regenerate their contents.
 	@rm -f $(HERDR_CONFIG_DIR)/config.toml
 	@rm -f $(HERDR_CONFIG_DIR)/spreader.yaml
 	@rm -f $(HERDR_CONFIG_DIR)/setup-spaces.sh
 	@rm -f $(HERDR_CONFIG_DIR)/setup-tabs.sh
 	@rm -f $(LOCAL_BIN)/herdr-scaffold-workspace
+	@rm -f $(LOCAL_BIN)/herdr-gen-spreader
 	@rm -f $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
 	@for s in $(REPO_DIR)/skills/*/; do rm -f $(CLAUDE_SKILLS_DIR)/$$(basename "$$s"); done
@@ -220,6 +274,14 @@ status: ## Show installation status
 	@printf "  config.toml:    "; [ -L $(HERDR_CONFIG_DIR)/config.toml ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@printf "  spreader.yaml:  "; [ -L $(HERDR_CONFIG_DIR)/spreader.yaml ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 	@printf "  scaffold CLI:   "; [ -L $(LOCAL_BIN)/herdr-scaffold-workspace ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
+	@printf "  gen-spreader:   "; [ -L $(LOCAL_BIN)/herdr-gen-spreader ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
+	@echo ""
+	@echo "$(YELLOW)Machine-local overrides:$(RESET)"
+	@printf "  config.local:   "; [ -f $(LOCAL_CONFIG) ] && echo "$(GREEN)present (overrides repo config.toml)$(RESET)" || echo "$(YELLOW)none - using repo config.toml$(RESET)"
+	@printf "  repos.local:    "; [ -f $(LOCAL_REPOS) ] && echo "$(GREEN)present (overrides repo spreader.yaml)$(RESET)" || echo "$(YELLOW)none - using repo spreader.yaml$(RESET)"
+	@printf "  active list:    "; bash $(REPO_DIR)/herdr/scripts/resolve-repos.sh 2>/dev/null \
+		| sed "s|^$(HOME)|~|" || echo "$(RED)unresolved$(RESET)"
+	@printf "  workspaces:     "; bash $(REPO_DIR)/herdr/scripts/resolve-repos.sh --entries 2>/dev/null | wc -l | tr -d ' '
 	@echo ""
 	@echo "$(YELLOW)Hook symlinks:$(RESET)"
 	@printf "  claude hook:    "; [ -L $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"

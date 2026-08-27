@@ -45,6 +45,28 @@ Workspaces are defined in `herdr/spreader.yaml`, one per project under
 workspace that already exists, use `herdr-scaffold-workspace` — see
 [herdr/README.md](herdr/README.md).
 
+## Per-machine config
+
+`herdr/spreader.yaml` and `herdr/config.toml` are the personal setup, and they're
+committed. A machine that needs something else — a work laptop whose repo list
+shouldn't be public — puts an override in `~/.config/herdr`, outside the repo:
+
+| Local file | Replaces |
+|------------|----------|
+| `~/.config/herdr/repos.local.yaml` | `herdr/spreader.yaml` (the repo list) |
+| `~/.config/herdr/config.local.toml` | `herdr/config.toml` (keys, theme, UI) |
+
+An override **replaces** its counterpart rather than merging with it, so a work
+machine shows work repos and nothing else. `make setup-config` links whichever
+applies; `make status` reports which won.
+
+```bash
+make repos          # show the active list, with ✓/✗ per directory
+make repos-local    # build this machine's list by scanning ~/Documents/Code
+```
+
+`$HERDR_REPOS` beats both if you need to point at a list somewhere else.
+
 ## Make Targets
 
 | Target | Description |
@@ -52,6 +74,8 @@ workspace that already exists, use `herdr-scaffold-workspace` — see
 | `make all` | Install everything and configure |
 | `make install` | Install herdr, herdr-spreader, lazygit |
 | `make setup` | Symlink configs and create workspaces |
+| `make repos` | Show the workspace list currently in effect |
+| `make repos-local` | Generate this machine's list from `$CODE_DIR` |
 | `make status` | Show installation status |
 | `make update` | Update all tools to latest versions |
 | `make unlink` | Remove symlinks (keeps tools installed) |

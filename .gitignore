@@ -1,3 +1,8 @@
+# Machine-local herdr overrides belong in ~/.config/herdr, but ignore them here
+# too so a stray copy in the repo can never be committed.
+*.local.yaml
+*.local.toml
+
 __pycache__/
 *.pyc
 .e2e-tmp/

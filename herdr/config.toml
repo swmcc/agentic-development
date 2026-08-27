@@ -24,6 +24,17 @@ description = "new workspace with standard tabs"
 width = "60%"
 height = "30%"
 
+# Capture a thought straight into today's daily note, from whatever workspace
+# you happen to be in. Timestamped, because /washup cares when a decision was
+# made. Requires Obsidian to be running — the CLI drives the app, not the disk.
+[[keys.command]]
+key = "prefix+o"
+type = "popup"
+command = "exec bash -c 'read -rp \"Note: \" n; [ -n \"$n\" ] || exit 0; obsidian daily:append content=\"- $(date +%H:%M) $n\" >/dev/null && echo \"captured\" || echo \"failed — is Obsidian running?\"; sleep 1'"
+description = "capture a thought into today's daily note"
+width = "60%"
+height = "20%"
+
 [theme]
 name = "gruvbox"
 auto_switch = false

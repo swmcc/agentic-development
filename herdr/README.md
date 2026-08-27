@@ -6,13 +6,59 @@ My [Herdr](https://herdr.io) terminal multiplexer configuration for agentic deve
 
 | File | Purpose |
 |------|---------|
-| `config.toml` | Keybindings, UI settings, theme (gruvbox) |
-| `spreader.yaml` | Workspace definitions for herdr-spreader |
+| `config.toml` | Keybindings, UI settings, theme (gruvbox) — the personal defaults |
+| `spreader.yaml` | Workspace definitions for herdr-spreader — the personal repo list |
+| `scripts/resolve-repos.sh` | Work out which repo list is in effect, and print it |
+| `scripts/gen-spreader.sh` | Generate a repo list by scanning a directory |
 | `scripts/scaffold-workspace.sh` | Apply the standard tab layout to a live workspace |
 | `scripts/setup-spaces.sh` | Automation script for workspace creation |
 | `scripts/setup-tabs.sh` | Tab creation helper script |
 | `hooks/claude-agent-state.sh` | Claude Code integration hook |
 | `hooks/codex-agent-state.sh` | Codex integration hook |
+
+## Machine-local overrides
+
+Everything in this directory is the *personal* config and gets committed. A
+machine that needs a different setup — a work laptop whose repo list has no
+business in a public GitHub repo — drops an override into `~/.config/herdr`:
+
+| Local file | Replaces |
+|------------|----------|
+| `~/.config/herdr/repos.local.yaml` | `spreader.yaml` (the repo list) |
+| `~/.config/herdr/config.local.toml` | `config.toml` (keys, theme, UI) |
+
+**Overrides replace, they never merge.** When `repos.local.yaml` exists the
+committed list is ignored outright, so a work machine shows work repos and
+nothing else. `make setup-config` picks whichever applies and points
+`~/.config/herdr/{config.toml,spreader.yaml}` at it; `make status` says which one
+won.
+
+Build a local list by scanning your code directory:
+
+```bash
+make repos-local                      # scans ~/Documents/Code, writes repos.local.yaml, relinks
+make repos-local CODE_DIR=~/work      # scan somewhere else
+make repos                            # show the active list, ✓/✗ per directory
+```
+
+Or drive the generator directly for finer control:
+
+```bash
+herdr-gen-spreader --scan ~/Documents/Code --exclude talks,notes \
+  -o ~/.config/herdr/repos.local.yaml --force
+
+herdr-gen-spreader --scan ~/work ~/side/one-off   # stdout, extra paths appended
+```
+
+It is a plain generated file — edit it by hand afterwards if a workspace needs a
+non-standard layout. Regenerating overwrites those edits.
+
+For a one-off list that isn't either of the above, point `$HERDR_REPOS` at any
+file; it beats both. A `$HERDR_REPOS` that doesn't exist is an error rather than
+a silent fallback, so a typo can't quietly hand you the wrong repos.
+
+`make unlink` leaves both local files alone — they're yours, and nothing in the
+repo can reconstruct their contents.
 
 ## Installation
 
@@ -39,10 +85,14 @@ ln -sf ~/Documents/Code/agentic-development/herdr/spreader.yaml ~/.config/herdr/
 ln -sf ~/Documents/Code/agentic-development/herdr/scripts/setup-spaces.sh ~/.config/herdr/setup-spaces.sh
 ln -sf ~/Documents/Code/agentic-development/herdr/scripts/setup-tabs.sh ~/.config/herdr/setup-tabs.sh
 
-# Put the scaffold script on PATH
+# Put the scripts on PATH
 mkdir -p ~/.local/bin
 ln -sf ~/Documents/Code/agentic-development/herdr/scripts/scaffold-workspace.sh ~/.local/bin/herdr-scaffold-workspace
+ln -sf ~/Documents/Code/agentic-development/herdr/scripts/gen-spreader.sh ~/.local/bin/herdr-gen-spreader
 ```
+
+Symlink `config.local.toml` / `repos.local.yaml` instead of the repo copies where
+they exist — see [Machine-local overrides](#machine-local-overrides).
 
 ### Agent Integration Hooks
 
@@ -123,13 +173,18 @@ agent as not ready and moves on, leaving the prompt for you to answer.
 ### Manual workspace setup
 
 ```bash
-# Run the setup script
+# Run the setup script — reads whichever repo list is active
 ~/.config/herdr/setup-spaces.sh
 ```
 
+It takes its project list from `resolve-repos.sh` rather than carrying its own
+copy, so it can't drift from `spreader.yaml`. Directories that don't exist are
+reported and skipped.
+
 ## Customisation
 
-Edit `spreader.yaml` to add/remove workspaces. Each workspace follows this structure:
+Edit `spreader.yaml` for your personal list, or `~/.config/herdr/repos.local.yaml`
+for this machine's. Each workspace follows this structure:
 
 ```yaml
 - name: project-name
@@ -152,3 +207,7 @@ Edit `spreader.yaml` to add/remove workspaces. Each workspace follows this struc
 
 Give every tab at least one pane — spreader warns about tabs declared with a
 bare label and no `panes:` block.
+
+`setup-spaces.sh` parses this shape without a YAML library, matching a `- name:`
+line followed by a `root:` line. Reordering those two keys within a workspace
+will hide it from that script (herdr-spreader itself doesn't care).
