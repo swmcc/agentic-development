@@ -1,0 +1,215 @@
+diff --git a/app/models/card.rb b/app/models/card.rb
+new file mode 100644
+index 0000000..02758d9
+--- /dev/null
++++ b/app/models/card.rb
+@@ -0,0 +1,123 @@
++# frozen_string_literal: true
++
++class Card
++  include Comparable
++
++  attr_reader :key, :name, :value, :count_in_deck, :effect
++
++  def self.all = ALL
++  def self.deck = DECK
++
++  def self.[](key)
++    BY_KEY[key.to_sym]
++  end
++
++  def initialize(key:, name:, value:, count_in_deck:, effect:, requires_target:, can_target_self:, requires_guess:)
++    @key = key
++    @name = name
++    @value = value
++    @count_in_deck = count_in_deck
++    @effect = effect
++    @requires_target = requires_target
++    @can_target_self = can_target_self
++    @requires_guess = requires_guess
++
++    freeze
++  end
++
++  def <=>(other)
++    return unless other.respond_to?(:value)
++
++    value <=> other.value
++  end
++
++  def requires_target? = @requires_target
++  def can_target_self? = @can_target_self
++  def requires_guess? = @requires_guess
++
++  ALL = [
++    new(
++      key: :guard,
++      name: 'Guard',
++      value: 1,
++      count_in_deck: 5,
++      effect: "Guess a non-Guard card in another player's hand; they are out if correct.",
++      requires_target: true,
++      can_target_self: false,
++      requires_guess: true
++    ),
++    new(
++      key: :priest,
++      name: 'Priest',
++      value: 2,
++      count_in_deck: 2,
++      effect: "Look at another player's hand.",
++      requires_target: true,
++      can_target_self: false,
++      requires_guess: false
++    ),
++    new(
++      key: :baron,
++      name: 'Baron',
++      value: 3,
++      count_in_deck: 2,
++      effect: 'Compare hands with another player; lower value is out.',
++      requires_target: true,
++      can_target_self: false,
++      requires_guess: false
++    ),
++    new(
++      key: :handmaid,
++      name: 'Handmaid',
++      value: 4,
++      count_in_deck: 2,
++      effect: 'You cannot be targeted by other card effects until your next turn.',
++      requires_target: false,
++      can_target_self: false,
++      requires_guess: false
++    ),
++    new(
++      key: :prince,
++      name: 'Prince',
++      value: 5,
++      count_in_deck: 2,
++      effect: 'Choose any player, including yourself, to discard their hand and draw a new card.',
++      requires_target: true,
++      can_target_self: true,
++      requires_guess: false
++    ),
++    new(
++      key: :king,
++      name: 'King',
++      value: 6,
++      count_in_deck: 1,
++      effect: 'Trade hands with another player.',
++      requires_target: true,
++      can_target_self: false,
++      requires_guess: false
++    ),
++    new(
++      key: :countess,
++      name: 'Countess',
++      value: 7,
++      count_in_deck: 1,
++      effect: 'Must be played if your other card is the King or Prince.',
++      requires_target: false,
++      can_target_self: false,
++      requires_guess: false
++    ),
++    new(
++      key: :princess,
++      name: 'Princess',
++      value: 8,
++      count_in_deck: 1,
++      effect: 'You are out if you discard this card.',
++      requires_target: false,
++      can_target_self: false,
++      requires_guess: false
++    )
++  ].freeze
++
++  BY_KEY = ALL.to_h { |card| [card.key, card] }.freeze
++  DECK = ALL.flat_map { |card| [card] * card.count_in_deck }.freeze
++end
+diff --git a/spec/models/card_spec.rb b/spec/models/card_spec.rb
+new file mode 100644
+index 0000000..67146d6
+--- /dev/null
++++ b/spec/models/card_spec.rb
+@@ -0,0 +1,80 @@
++# frozen_string_literal: true
++
++require 'rails_helper'
++
++RSpec.describe Card, type: :model do
++  describe '.all' do
++    it 'returns the eight classic Love Letter cards' do
++      expect(described_class.all.map(&:key)).to eq(%i[
++        guard
++        priest
++        baron
++        handmaid
++        prince
++        king
++        countess
++        princess
++      ])
++    end
++
++    it 'is frozen with frozen card definitions' do
++      expect(described_class.all).to be_frozen
++      expect(described_class.all).to all(be_frozen)
++    end
++  end
++
++  describe '.deck' do
++    it 'expands to the sixteen-card classic deck' do
++      expect(described_class.deck.size).to eq(16)
++      expect(described_class.deck.tally.transform_keys(&:key)).to eq(
++        guard: 5,
++        priest: 2,
++        baron: 2,
++        handmaid: 2,
++        prince: 2,
++        king: 1,
++        countess: 1,
++        princess: 1
++      )
++    end
++  end
++
++  describe '.[]' do
++    it 'looks up cards by symbol or string key' do
++      expect(described_class[:guard].name).to eq('Guard')
++      expect(described_class['princess'].value).to eq(8)
++    end
++  end
++
++  it 'compares cards by value' do
++    expect(described_class[:guard]).to be < described_class[:priest]
++    expect(described_class[:princess]).to be > described_class[:countess]
++    expect([described_class[:king], described_class[:baron], described_class[:guard]].sort.map(&:key)).to eq(%i[guard baron king])
++  end
++
++  it 'defines values and counts' do
++    expect(described_class.all.to_h { |card| [card.key, [card.value, card.count_in_deck]] }).to eq(
++      guard: [1, 5],
++      priest: [2, 2],
++      baron: [3, 2],
++      handmaid: [4, 2],
++      prince: [5, 2],
++      king: [6, 1],
++      countess: [7, 1],
++      princess: [8, 1]
++    )
++  end
++
++  it 'defines targeting and guess flags' do
++    expect(described_class.all.to_h { |card| [card.key, [card.requires_target?, card.can_target_self?, card.requires_guess?]] }).to eq(
++      guard: [true, false, true],
++      priest: [true, false, false],
++      baron: [true, false, false],
++      handmaid: [false, false, false],
++      prince: [true, true, false],
++      king: [true, false, false],
++      countess: [false, false, false],
++      princess: [false, false, false]
++    )
++  end
++end

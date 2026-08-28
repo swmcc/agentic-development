@@ -1,0 +1,219 @@
+diff --git a/app/models/game.rb b/app/models/game.rb
+index c1cdf62..7ef88a4 100644
+--- a/app/models/game.rb
++++ b/app/models/game.rb
+@@ -4,9 +4,17 @@ class Game < ApplicationRecord
+   has_many :participants, dependent: :destroy
+   has_many :moves, dependent: :destroy
+ 
+-  before_create { self.code ||= SecureRandom.alphanumeric(6).upcase }
++  before_validation :ensure_code, on: :create
++
++  validates :code, presence: true, uniqueness: true
+ 
+   def started? = started_at.present?
+   def start! = update!(started_at: Time.current)
+   def joinable? = !started? && participants.count < (max_players || 4)
++
++  private
++
++  def ensure_code
++    self.code ||= SecureRandom.alphanumeric(6).upcase
++  end
+ end
+diff --git a/app/models/participant.rb b/app/models/participant.rb
+index 217607b..140a08e 100644
+--- a/app/models/participant.rb
++++ b/app/models/participant.rb
+@@ -2,5 +2,7 @@
+ 
+ class Participant < ApplicationRecord
+   belongs_to :game
+-  validates :name, presence: true
++
++  validates :name, :session_id, presence: true
++  validates :session_id, uniqueness: { scope: :game_id }
+ end
+diff --git a/db/migrate/20260828120000_harden_games_and_participants_schema.rb b/db/migrate/20260828120000_harden_games_and_participants_schema.rb
+new file mode 100644
+index 0000000..d6f99dd
+--- /dev/null
++++ b/db/migrate/20260828120000_harden_games_and_participants_schema.rb
+@@ -0,0 +1,35 @@
++# frozen_string_literal: true
++
++# rubocop:disable Metrics/MethodLength, Rails/BulkChangeTable
++class HardenGamesAndParticipantsSchema < ActiveRecord::Migration[8.0]
++  def up
++    remove_index :games, :code if index_exists?(:games, :code)
++    add_index :games, :code, unique: true unless index_exists?(:games, :code, unique: true)
++
++    execute "UPDATE participants SET name = '' WHERE name IS NULL"
++    execute "UPDATE participants SET session_id = 'legacy-' || id WHERE session_id IS NULL"
++    execute 'UPDATE participants SET tokens = 0 WHERE tokens IS NULL'
++
++    change_column_null :participants, :name, false
++    change_column_null :participants, :session_id, false
++    change_column_default :participants, :tokens, from: nil, to: 0
++
++    remove_index :participants, :session_id if index_exists?(:participants, :session_id)
++    return if index_exists?(:participants, %i[game_id session_id], unique: true)
++
++    add_index :participants, %i[game_id session_id], unique: true
++  end
++
++  def down
++    remove_index :participants, %i[game_id session_id] if index_exists?(:participants, %i[game_id session_id])
++    add_index :participants, :session_id unless index_exists?(:participants, :session_id)
++
++    change_column_default :participants, :tokens, from: 0, to: nil
++    change_column_null :participants, :session_id, true
++    change_column_null :participants, :name, true
++
++    remove_index :games, :code if index_exists?(:games, :code)
++    add_index :games, :code unless index_exists?(:games, :code)
++  end
++end
++# rubocop:enable Metrics/MethodLength, Rails/BulkChangeTable
+diff --git a/db/schema.rb b/db/schema.rb
+index 491ecf7..fa5fd33 100644
+--- a/db/schema.rb
++++ b/db/schema.rb
+@@ -10,40 +10,40 @@
+ #
+ # It's strongly recommended that you check this file into your version control system.
+ 
+-ActiveRecord::Schema[8.0].define(version: 2025_08_28_134411) do
++ActiveRecord::Schema[8.1].define(version: 2026_08_28_120000) do
+   # These are extensions that must be enabled in order to support this database
+   enable_extension "pg_catalog.plpgsql"
+ 
+   create_table "games", force: :cascade do |t|
+     t.string "code"
+-    t.datetime "started_at"
+-    t.integer "max_players"
+     t.datetime "created_at", null: false
++    t.integer "max_players"
++    t.datetime "started_at"
+     t.datetime "updated_at", null: false
+-    t.index ["code"], name: "index_games_on_code"
++    t.index ["code"], name: "index_games_on_code", unique: true
+   end
+ 
+   create_table "moves", force: :cascade do |t|
++    t.string "action"
++    t.datetime "created_at", null: false
+     t.bigint "game_id", null: false
+     t.bigint "participant_id", null: false
+-    t.string "action"
+     t.jsonb "payload"
+-    t.datetime "created_at", null: false
+     t.datetime "updated_at", null: false
+     t.index ["game_id"], name: "index_moves_on_game_id"
+     t.index ["participant_id"], name: "index_moves_on_participant_id"
+   end
+ 
+   create_table "participants", force: :cascade do |t|
+-    t.bigint "game_id", null: false
+-    t.string "name"
+-    t.string "session_id"
+-    t.integer "tokens"
+-    t.boolean "eliminated", default: false
+     t.datetime "created_at", null: false
++    t.boolean "eliminated", default: false
++    t.bigint "game_id", null: false
++    t.string "name", null: false
++    t.string "session_id", null: false
++    t.integer "tokens", default: 0
+     t.datetime "updated_at", null: false
++    t.index ["game_id", "session_id"], name: "index_participants_on_game_id_and_session_id", unique: true
+     t.index ["game_id"], name: "index_participants_on_game_id"
+-    t.index ["session_id"], name: "index_participants_on_session_id"
+   end
+ 
+   add_foreign_key "moves", "games"
+diff --git a/spec/models/game_spec.rb b/spec/models/game_spec.rb
+index 132b71c..c6dd21f 100644
+--- a/spec/models/game_spec.rb
++++ b/spec/models/game_spec.rb
+@@ -7,4 +7,12 @@ RSpec.describe Game, type: :model do
+     g = Game.create!
+     expect(g.code).to be_present
+   end
++
++  it 'requires code to be unique' do
++    Game.create!(code: 'ABC123')
++    duplicate = Game.new(code: 'ABC123')
++
++    expect(duplicate).not_to be_valid
++    expect(duplicate.errors[:code]).to be_present
++  end
+ end
+diff --git a/spec/models/participant_spec.rb b/spec/models/participant_spec.rb
+new file mode 100644
+index 0000000..5d9901b
+--- /dev/null
++++ b/spec/models/participant_spec.rb
+@@ -0,0 +1,62 @@
++# frozen_string_literal: true
++
++require 'rails_helper'
++
++# rubocop:disable Metrics/BlockLength
++RSpec.describe Participant, type: :model do
++  let(:game) { Game.create! }
++
++  it 'requires a name' do
++    participant = game.participants.build(name: nil, session_id: 'session-1')
++
++    expect(participant).not_to be_valid
++    expect(participant.errors[:name]).to be_present
++  end
++
++  it 'requires a session_id' do
++    participant = game.participants.build(name: 'Alice', session_id: nil)
++
++    expect(participant).not_to be_valid
++    expect(participant.errors[:session_id]).to be_present
++  end
++
++  it 'requires session_id to be unique per game' do
++    game.participants.create!(name: 'Alice', session_id: 'session-1')
++    duplicate = game.participants.build(name: 'Bob', session_id: 'session-1')
++
++    expect(duplicate).not_to be_valid
++    expect(duplicate.errors[:session_id]).to be_present
++  end
++
++  it 'allows the same session_id in different games' do
++    game.participants.create!(name: 'Alice', session_id: 'session-1')
++    other_game = Game.create!
++
++    participant = other_game.participants.build(name: 'Alice', session_id: 'session-1')
++
++    expect(participant).to be_valid
++  end
++
++  it 'defaults tokens to zero' do
++    participant = game.participants.create!(name: 'Alice', session_id: 'session-1')
++
++    expect(participant.tokens).to eq(0)
++  end
++
++  it 'enforces session_id uniqueness per game at the database level' do
++    game.participants.create!(name: 'Alice', session_id: 'session-1')
++
++    duplicate_attributes = {
++      game_id: game.id,
++      name: 'Bob',
++      session_id: 'session-1',
++      created_at: Time.current,
++      updated_at: Time.current
++    }
++
++    expect do
++      described_class.insert!(duplicate_attributes) # rubocop:disable Rails/SkipsModelValidations
++    end.to raise_error(ActiveRecord::RecordNotUnique)
++  end
++end
++# rubocop:enable Metrics/BlockLength

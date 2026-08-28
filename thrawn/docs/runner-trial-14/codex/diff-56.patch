@@ -1,0 +1,161 @@
+diff --git a/README.md b/README.md
+index 89717fd..e3e0a2a 100644
+--- a/README.md
++++ b/README.md
+@@ -35,10 +35,20 @@ bin/rspec
+ 
+ RSpec covers models and request flows (sessions, games, joining, etc.).
+ 
++## Cleaning Up Games
++
++Delete finished games and games that have not been updated for more than 24 hours:
++
++```sh
++bin/rails games:cleanup
++```
++
++Run this command periodically from your scheduler in production. Deleting a game also deletes its participants and moves.
++
+ ## Development Notes
+ - Identity is stored in the Rails session (session[:sid] + session[:pname]). No permanent user records exist.
+ - Game state (Game, Participant, Move) is persisted in the database so Turbo Streams can broadcast updates.
+-- Old games can be cleaned up periodically with a background job or rake task.
++- Finished and stale games can be cleaned up periodically with `bin/rails games:cleanup`.
+ 
+ ## Roadmap
+ - Implement full Love Letter card rules (Guard, Priest, Baron, etc.).
+diff --git a/app/models/game.rb b/app/models/game.rb
+index c1cdf62..9d28610 100644
+--- a/app/models/game.rb
++++ b/app/models/game.rb
+@@ -1,12 +1,24 @@
+ # frozen_string_literal: true
+ 
+ class Game < ApplicationRecord
++  CLEANUP_AGE = 24.hours
++
+   has_many :participants, dependent: :destroy
+   has_many :moves, dependent: :destroy
+ 
+   before_create { self.code ||= SecureRandom.alphanumeric(6).upcase }
+ 
++  scope :finished, -> { where.not(finished_at: nil) }
++  scope :stale, ->(cutoff = CLEANUP_AGE.ago) { where(updated_at: ...cutoff) }
++  scope :eligible_for_cleanup, ->(cutoff = CLEANUP_AGE.ago) { finished.or(stale(cutoff)) }
++
+   def started? = started_at.present?
+   def start! = update!(started_at: Time.current)
++  def finished? = finished_at.present?
++  def finish! = update!(finished_at: Time.current)
+   def joinable? = !started? && participants.count < (max_players || 4)
++
++  def self.cleanup!(cutoff: CLEANUP_AGE.ago)
++    eligible_for_cleanup(cutoff).destroy_all
++  end
+ end
+diff --git a/db/migrate/20260828000000_add_finished_at_to_games.rb b/db/migrate/20260828000000_add_finished_at_to_games.rb
+new file mode 100644
+index 0000000..f7dd84a
+--- /dev/null
++++ b/db/migrate/20260828000000_add_finished_at_to_games.rb
+@@ -0,0 +1,7 @@
++# frozen_string_literal: true
++
++class AddFinishedAtToGames < ActiveRecord::Migration[8.1]
++  def change
++    add_column :games, :finished_at, :datetime
++  end
++end
+diff --git a/db/schema.rb b/db/schema.rb
+index 491ecf7..10028cb 100644
+--- a/db/schema.rb
++++ b/db/schema.rb
+@@ -10,37 +10,38 @@
+ #
+ # It's strongly recommended that you check this file into your version control system.
+ 
+-ActiveRecord::Schema[8.0].define(version: 2025_08_28_134411) do
++ActiveRecord::Schema[8.1].define(version: 2026_08_28_000000) do
+   # These are extensions that must be enabled in order to support this database
+   enable_extension "pg_catalog.plpgsql"
+ 
+   create_table "games", force: :cascade do |t|
+     t.string "code"
+-    t.datetime "started_at"
+-    t.integer "max_players"
+     t.datetime "created_at", null: false
++    t.datetime "finished_at"
++    t.integer "max_players"
++    t.datetime "started_at"
+     t.datetime "updated_at", null: false
+     t.index ["code"], name: "index_games_on_code"
+   end
+ 
+   create_table "moves", force: :cascade do |t|
++    t.string "action"
++    t.datetime "created_at", null: false
+     t.bigint "game_id", null: false
+     t.bigint "participant_id", null: false
+-    t.string "action"
+     t.jsonb "payload"
+-    t.datetime "created_at", null: false
+     t.datetime "updated_at", null: false
+     t.index ["game_id"], name: "index_moves_on_game_id"
+     t.index ["participant_id"], name: "index_moves_on_participant_id"
+   end
+ 
+   create_table "participants", force: :cascade do |t|
++    t.datetime "created_at", null: false
++    t.boolean "eliminated", default: false
+     t.bigint "game_id", null: false
+     t.string "name"
+     t.string "session_id"
+     t.integer "tokens"
+-    t.boolean "eliminated", default: false
+-    t.datetime "created_at", null: false
+     t.datetime "updated_at", null: false
+     t.index ["game_id"], name: "index_participants_on_game_id"
+     t.index ["session_id"], name: "index_participants_on_session_id"
+diff --git a/lib/tasks/games.rake b/lib/tasks/games.rake
+new file mode 100644
+index 0000000..1985465
+--- /dev/null
++++ b/lib/tasks/games.rake
+@@ -0,0 +1,9 @@
++# frozen_string_literal: true
++
++namespace :games do
++  desc 'Delete finished games and games untouched for more than 24 hours'
++  task cleanup: :environment do
++    deleted_count = Game.cleanup!.size
++    puts "Deleted #{deleted_count} game(s)."
++  end
++end
+diff --git a/spec/models/game_spec.rb b/spec/models/game_spec.rb
+index 132b71c..b773044 100644
+--- a/spec/models/game_spec.rb
++++ b/spec/models/game_spec.rb
+@@ -7,4 +7,23 @@ RSpec.describe Game, type: :model do
+     g = Game.create!
+     expect(g.code).to be_present
+   end
++
++  describe '.cleanup!' do
++    it 'deletes finished games and unfinished games untouched for more than 24 hours' do
++      cutoff = 24.hours.ago
++      finished_game = Game.create!(finished_at: Time.current)
++      stale_game = Game.create!
++      boundary_game = Game.create!
++      active_game = Game.create!
++      stale_game.update!(updated_at: cutoff - 1.second)
++      boundary_game.update!(updated_at: cutoff)
++
++      deleted_games = described_class.cleanup!(cutoff: cutoff)
++
++      expect(deleted_games).to contain_exactly(finished_game, stale_game)
++      expect(described_class.where(id: [finished_game.id, stale_game.id])).to be_empty
++      expect(described_class.where(id: [boundary_game.id, active_game.id]))
++        .to contain_exactly(boundary_game, active_game)
++    end
++  end
+ end

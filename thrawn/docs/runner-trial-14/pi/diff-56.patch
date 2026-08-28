@@ -1,0 +1,159 @@
+diff --git a/README.md b/README.md
+index 89717fd..f0d8f72 100644
+--- a/README.md
++++ b/README.md
+@@ -23,6 +23,9 @@ bin/dev
+ 
+ Visit http://localhost:3000
+ 
++Clean up games finished or untouched for more than 24 hours:
++bin/rails games:cleanup
++
+ ## How It Works
+ 1. Enter Name – When you visit the app, you’re asked for a name.
+ 2. Lobby – You’ll see a list of active games and can create a new one.
+@@ -38,7 +41,7 @@ RSpec covers models and request flows (sessions, games, joining, etc.).
+ ## Development Notes
+ - Identity is stored in the Rails session (session[:sid] + session[:pname]). No permanent user records exist.
+ - Game state (Game, Participant, Move) is persisted in the database so Turbo Streams can broadcast updates.
+-- Old games can be cleaned up periodically with a background job or rake task.
++- Old games can be cleaned up periodically with `bin/rails games:cleanup`.
+ 
+ ## Roadmap
+ - Implement full Love Letter card rules (Guard, Priest, Baron, etc.).
+diff --git a/app/models/game.rb b/app/models/game.rb
+index c1cdf62..7680f2d 100644
+--- a/app/models/game.rb
++++ b/app/models/game.rb
+@@ -1,11 +1,18 @@
+ # frozen_string_literal: true
+ 
+ class Game < ApplicationRecord
+-  has_many :participants, dependent: :destroy
+   has_many :moves, dependent: :destroy
++  has_many :participants, dependent: :destroy
+ 
+   before_create { self.code ||= SecureRandom.alphanumeric(6).upcase }
+ 
++  def self.cleanup_stale!(cutoff: 24.hours.ago)
++    stale = where(updated_at: ...cutoff)
++    finished = where.not(finished_at: nil).where(finished_at: ...cutoff)
++
++    stale.or(finished).find_each.sum { |game| game.destroy! ? 1 : 0 }
++  end
++
+   def started? = started_at.present?
+   def start! = update!(started_at: Time.current)
+   def joinable? = !started? && participants.count < (max_players || 4)
+diff --git a/db/migrate/20260828120056_add_finished_at_to_games.rb b/db/migrate/20260828120056_add_finished_at_to_games.rb
+new file mode 100644
+index 0000000..8145aff
+--- /dev/null
++++ b/db/migrate/20260828120056_add_finished_at_to_games.rb
+@@ -0,0 +1,8 @@
++# frozen_string_literal: true
++
++class AddFinishedAtToGames < ActiveRecord::Migration[8.0]
++  def change
++    add_column :games, :finished_at, :datetime
++    add_index :games, :finished_at
++  end
++end
+diff --git a/db/schema.rb b/db/schema.rb
+index 491ecf7..8499d0a 100644
+--- a/db/schema.rb
++++ b/db/schema.rb
+@@ -10,17 +10,19 @@
+ #
+ # It's strongly recommended that you check this file into your version control system.
+ 
+-ActiveRecord::Schema[8.0].define(version: 2025_08_28_134411) do
++ActiveRecord::Schema[8.0].define(version: 2026_08_28_120056) do
+   # These are extensions that must be enabled in order to support this database
+   enable_extension "pg_catalog.plpgsql"
+ 
+   create_table "games", force: :cascade do |t|
+     t.string "code"
+     t.datetime "started_at"
++    t.datetime "finished_at"
+     t.integer "max_players"
+     t.datetime "created_at", null: false
+     t.datetime "updated_at", null: false
+     t.index ["code"], name: "index_games_on_code"
++    t.index ["finished_at"], name: "index_games_on_finished_at"
+   end
+ 
+   create_table "moves", force: :cascade do |t|
+diff --git a/lib/tasks/games.rake b/lib/tasks/games.rake
+new file mode 100644
+index 0000000..b7c5063
+--- /dev/null
++++ b/lib/tasks/games.rake
+@@ -0,0 +1,10 @@
++# frozen_string_literal: true
++
++namespace :games do
++  desc 'Delete games finished or untouched for more than 24 hours'
++  task cleanup: :environment do
++    deleted = Game.cleanup_stale!
++
++    puts "Deleted #{deleted} #{'game'.pluralize(deleted)}."
++  end
++end
+diff --git a/spec/models/game_spec.rb b/spec/models/game_spec.rb
+index 132b71c..c4b69ef 100644
+--- a/spec/models/game_spec.rb
++++ b/spec/models/game_spec.rb
+@@ -7,4 +7,52 @@ RSpec.describe Game, type: :model do
+     g = Game.create!
+     expect(g.code).to be_present
+   end
++
++  describe '.cleanup_stale!' do
++    let(:cutoff) { 24.hours.ago }
++
++    it 'deletes games untouched before the cutoff' do
++      old_game = Game.create!
++      recent_game = Game.create!
++      old_game.update_columns(updated_at: cutoff - 1.second)
++      recent_game.update_columns(updated_at: cutoff + 1.second)
++
++      expect { described_class.cleanup_stale!(cutoff:) }
++        .to change(described_class, :count).by(-1)
++
++      expect(described_class.exists?(old_game.id)).to be(false)
++      expect(described_class.exists?(recent_game.id)).to be(true)
++    end
++
++    it 'deletes games finished before the cutoff even when recently touched' do
++      old_finished_game = Game.create!(finished_at: cutoff - 1.second)
++      recent_finished_game = Game.create!(finished_at: cutoff + 1.second)
++
++      deleted = described_class.cleanup_stale!(cutoff:)
++
++      expect(deleted).to eq(1)
++      expect(described_class.exists?(old_finished_game.id)).to be(false)
++      expect(described_class.exists?(recent_finished_game.id)).to be(true)
++    end
++
++    it 'keeps games exactly at the cutoff' do
++      game = Game.create!(finished_at: cutoff)
++      game.update_columns(updated_at: cutoff)
++
++      expect { described_class.cleanup_stale!(cutoff:) }
++        .not_to change(described_class, :count)
++    end
++
++    it 'destroys dependent participants and moves through callbacks' do
++      game = Game.create!
++      participant = game.participants.create!(name: 'Ada')
++      move = game.moves.create!(participant:, action: 'draw')
++      game.update_columns(updated_at: cutoff - 1.second)
++
++      described_class.cleanup_stale!(cutoff:)
++
++      expect(Participant.exists?(participant.id)).to be(false)
++      expect(Move.exists?(move.id)).to be(false)
++    end
++  end
+ end

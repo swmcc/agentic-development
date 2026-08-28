@@ -1,0 +1,97 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 4584bcf..bd9485d 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -3,15 +3,35 @@ name: CI
+ on:
+   pull_request:
+   push:
+-    branches: [ main ]
++    branches: [main]
+ 
+ jobs:
+-  scan_ruby:
++  rspec:
++    name: RSpec
+     runs-on: ubuntu-latest
+ 
++    services:
++      postgres:
++        image: postgres:16
++        env:
++          POSTGRES_USER: postgres
++          POSTGRES_PASSWORD: postgres
++          POSTGRES_DB: loveletter_test
++        ports:
++          - 5432:5432
++        options: >-
++          --health-cmd "pg_isready -U postgres"
++          --health-interval 10s
++          --health-timeout 5s
++          --health-retries 5
++
++    env:
++      RAILS_ENV: test
++      DATABASE_URL: postgres://postgres:postgres@localhost:5432/loveletter_test
++
+     steps:
+       - name: Checkout code
+-        uses: actions/checkout@v7
++        uses: actions/checkout@v4
+ 
+       - name: Set up Ruby
+         uses: ruby/setup-ruby@v1
+@@ -19,15 +39,19 @@ jobs:
+           ruby-version: .ruby-version
+           bundler-cache: true
+ 
+-      - name: Scan for common Rails security vulnerabilities using static analysis
+-        run: bin/brakeman --no-pager
++      - name: Prepare database
++        run: bundle exec rails db:prepare
++
++      - name: Run RSpec
++        run: bundle exec rspec
+ 
+-  scan_js:
++  rubocop:
++    name: RuboCop
+     runs-on: ubuntu-latest
+ 
+     steps:
+       - name: Checkout code
+-        uses: actions/checkout@v7
++        uses: actions/checkout@v4
+ 
+       - name: Set up Ruby
+         uses: ruby/setup-ruby@v1
+@@ -35,14 +59,16 @@ jobs:
+           ruby-version: .ruby-version
+           bundler-cache: true
+ 
+-      - name: Scan for security vulnerabilities in JavaScript dependencies
+-        run: bin/importmap audit
++      - name: Run RuboCop
++        run: bundle exec rubocop
+ 
+-  lint:
++  brakeman:
++    name: Brakeman
+     runs-on: ubuntu-latest
++
+     steps:
+       - name: Checkout code
+-        uses: actions/checkout@v7
++        uses: actions/checkout@v4
+ 
+       - name: Set up Ruby
+         uses: ruby/setup-ruby@v1
+@@ -50,6 +76,5 @@ jobs:
+           ruby-version: .ruby-version
+           bundler-cache: true
+ 
+-      - name: Lint code for consistent style
+-        run: bin/rubocop -f github
+-
++      - name: Run Brakeman
++        run: bundle exec brakeman -q --no-pager

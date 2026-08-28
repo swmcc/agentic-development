@@ -1,0 +1,72 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 4584bcf..ee5b319 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -6,8 +6,24 @@ on:
+     branches: [ main ]
+ 
+ jobs:
+-  scan_ruby:
++  test:
+     runs-on: ubuntu-latest
++    services:
++      postgres:
++        image: postgres:17
++        env:
++          POSTGRES_DB: loveletter_test
++          POSTGRES_PASSWORD: postgres
++        ports:
++          - 5432:5432
++        options: >-
++          --health-cmd "pg_isready -U postgres"
++          --health-interval 10s
++          --health-timeout 5s
++          --health-retries 5
++    env:
++      RAILS_ENV: test
++      DATABASE_URL: postgres://postgres:postgres@localhost:5432/loveletter_test
+ 
+     steps:
+       - name: Checkout code
+@@ -19,10 +35,13 @@ jobs:
+           ruby-version: .ruby-version
+           bundler-cache: true
+ 
+-      - name: Scan for common Rails security vulnerabilities using static analysis
+-        run: bin/brakeman --no-pager
++      - name: Prepare database
++        run: bundle exec rails db:prepare
+ 
+-  scan_js:
++      - name: Run specs
++        run: bundle exec rspec
++
++  lint:
+     runs-on: ubuntu-latest
+ 
+     steps:
+@@ -35,11 +54,12 @@ jobs:
+           ruby-version: .ruby-version
+           bundler-cache: true
+ 
+-      - name: Scan for security vulnerabilities in JavaScript dependencies
+-        run: bin/importmap audit
++      - name: Run RuboCop
++        run: bundle exec rubocop
+ 
+-  lint:
++  security:
+     runs-on: ubuntu-latest
++
+     steps:
+       - name: Checkout code
+         uses: actions/checkout@v7
+@@ -50,6 +70,5 @@ jobs:
+           ruby-version: .ruby-version
+           bundler-cache: true
+ 
+-      - name: Lint code for consistent style
+-        run: bin/rubocop -f github
+-
++      - name: Run Brakeman
++        run: bundle exec brakeman -q --no-pager

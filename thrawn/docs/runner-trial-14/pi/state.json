@@ -1,0 +1,125 @@
+{
+  "run_id": "swarm-3",
+  "created": "2026-08-28T02:39:38Z",
+  "phase": "swarm",
+  "mode": "swarm",
+  "target": {
+    "kind": "swarm",
+    "ref": "36 37 38 39 56",
+    "title": "swarm: 36, 37, 38, 39, 56"
+  },
+  "base_branch": "main",
+  "base_commit": "172749e1fb915ed14abef0c601b0dac71c5d4a01",
+  "tasks": {
+    "36": {
+      "status": "done",
+      "runner": "pi",
+      "branch": "thrawn/swarm-3/36",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-3/36",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pK",
+        "tab": "wE:t8"
+      },
+      "started": "2026-08-28T02:39:39Z",
+      "usage": {
+        "input": 54572,
+        "output": 4140,
+        "cache_read": 372224,
+        "cache_write": 0,
+        "total": 430936,
+        "cost_usd": 0.5832
+      },
+      "exit": 0,
+      "finished": "2026-08-28T02:44:00Z"
+    },
+    "37": {
+      "status": "done",
+      "runner": "pi",
+      "branch": "thrawn/swarm-3/37",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-3/37",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pM",
+        "tab": "wE:t8"
+      },
+      "started": "2026-08-28T02:39:39Z",
+      "usage": {
+        "input": 75903,
+        "output": 7599,
+        "cache_read": 737280,
+        "cache_write": 0,
+        "total": 820782,
+        "cost_usd": 0.9761
+      },
+      "exit": 0,
+      "finished": "2026-08-28T02:44:00Z"
+    },
+    "38": {
+      "status": "done",
+      "runner": "pi",
+      "branch": "thrawn/swarm-3/38",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-3/38",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pN",
+        "tab": "wE:t8"
+      },
+      "started": "2026-08-28T02:39:39Z",
+      "usage": {
+        "input": 14421,
+        "output": 1591,
+        "cache_read": 20480,
+        "cache_write": 0,
+        "total": 36492,
+        "cost_usd": 0.1301
+      },
+      "exit": 0,
+      "finished": "2026-08-28T02:44:00Z"
+    },
+    "39": {
+      "status": "done",
+      "runner": "pi",
+      "branch": "thrawn/swarm-3/39",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-3/39",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pP",
+        "tab": "wE:t8"
+      },
+      "started": "2026-08-28T02:39:40Z",
+      "usage": {
+        "input": 17334,
+        "output": 2561,
+        "cache_read": 25600,
+        "cache_write": 0,
+        "total": 45495,
+        "cost_usd": 0.1763
+      },
+      "exit": 0,
+      "finished": "2026-08-28T02:44:00Z"
+    },
+    "56": {
+      "status": "done",
+      "runner": "pi",
+      "branch": "thrawn/swarm-3/56",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-3/56",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pQ",
+        "tab": "wE:t8"
+      },
+      "started": "2026-08-28T02:39:40Z",
+      "usage": {
+        "input": 63680,
+        "output": 6131,
+        "cache_read": 287744,
+        "cache_write": 0,
+        "total": 357555,
+        "cost_usd": 0.6462
+      },
+      "exit": 0,
+      "finished": "2026-08-28T02:44:00Z"
+    }
+  }
+}

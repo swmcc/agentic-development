@@ -1,0 +1,75 @@
+{
+  "run_id": "swarm-2",
+  "created": "2026-08-28T02:35:15Z",
+  "phase": "swarm",
+  "mode": "swarm",
+  "target": {
+    "kind": "swarm",
+    "ref": "36 37 38 39 56",
+    "title": "swarm: 36, 37, 38, 39, 56"
+  },
+  "base_branch": "main",
+  "base_commit": "172749e1fb915ed14abef0c601b0dac71c5d4a01",
+  "tasks": {
+    "36": {
+      "status": "running",
+      "runner": "codex",
+      "branch": "thrawn/swarm-2/36",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-2/36",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pE",
+        "tab": "wE:t7"
+      },
+      "started": "2026-08-28T02:35:15Z"
+    },
+    "37": {
+      "status": "running",
+      "runner": "codex",
+      "branch": "thrawn/swarm-2/37",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-2/37",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pF",
+        "tab": "wE:t7"
+      },
+      "started": "2026-08-28T02:35:16Z"
+    },
+    "38": {
+      "status": "running",
+      "runner": "codex",
+      "branch": "thrawn/swarm-2/38",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-2/38",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pG",
+        "tab": "wE:t7"
+      },
+      "started": "2026-08-28T02:35:16Z"
+    },
+    "39": {
+      "status": "running",
+      "runner": "codex",
+      "branch": "thrawn/swarm-2/39",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-2/39",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pH",
+        "tab": "wE:t7"
+      },
+      "started": "2026-08-28T02:35:17Z"
+    },
+    "56": {
+      "status": "running",
+      "runner": "codex",
+      "branch": "thrawn/swarm-2/56",
+      "worktree": "/Users/swm/Library/Caches/thrawn/worktrees/rails_love_letter-9fc53239/swarm-2/56",
+      "handle": {
+        "via": "herdr",
+        "pane": "wE:pJ",
+        "tab": "wE:t7"
+      },
+      "started": "2026-08-28T02:35:17Z"
+    }
+  }
+}

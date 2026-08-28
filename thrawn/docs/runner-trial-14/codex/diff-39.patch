@@ -1,0 +1,139 @@
+diff --git a/app/models/card.rb b/app/models/card.rb
+new file mode 100644
+index 0000000..5401295
+--- /dev/null
++++ b/app/models/card.rb
+@@ -0,0 +1,65 @@
++# frozen_string_literal: true
++
++class Card
++  include Comparable
++
++  attr_reader :key, :name, :value, :count_in_deck, :effect
++
++  def initialize(key:, name:, value:, count_in_deck:, effect:, requires_target:, can_target_self:, requires_guess:) # rubocop:disable Metrics/ParameterLists
++    @key = key
++    @name = name.freeze
++    @value = value
++    @count_in_deck = count_in_deck
++    @effect = effect.freeze
++    @requires_target = requires_target
++    @can_target_self = can_target_self
++    @requires_guess = requires_guess
++    freeze
++  end # rubocop:enable Metrics/ParameterLists
++
++  def <=>(other)
++    value <=> other.value if other.respond_to?(:value)
++  end
++
++  def requires_target? = @requires_target
++  def can_target_self? = @can_target_self
++  def requires_guess? = @requires_guess
++
++  CARDS = [
++    new(key: :guard, name: 'Guard', value: 1, count_in_deck: 5,
++        effect: 'Choose another player and name a non-Guard card. If they hold that card, they are out of the round.',
++        requires_target: true, can_target_self: false, requires_guess: true),
++    new(key: :priest, name: 'Priest', value: 2, count_in_deck: 2,
++        effect: "Look at another player's hand.",
++        requires_target: true, can_target_self: false, requires_guess: false),
++    new(key: :baron, name: 'Baron', value: 3, count_in_deck: 2,
++        effect: 'Compare hands with another player. The player with the lower-value card is out of the round.',
++        requires_target: true, can_target_self: false, requires_guess: false),
++    new(key: :handmaid, name: 'Handmaid', value: 4, count_in_deck: 2,
++        effect: 'Until your next turn, other players cannot choose you for a card effect.',
++        requires_target: false, can_target_self: false, requires_guess: false),
++    new(key: :prince, name: 'Prince', value: 5, count_in_deck: 2,
++        effect: 'Choose any player, including yourself. They discard their hand and draw a new card.',
++        requires_target: true, can_target_self: true, requires_guess: false),
++    new(key: :king, name: 'King', value: 6, count_in_deck: 1,
++        effect: 'Trade hands with another player.',
++        requires_target: true, can_target_self: false, requires_guess: false),
++    new(key: :countess, name: 'Countess', value: 7, count_in_deck: 1,
++        effect: 'You must play this card if the other card in your hand is the King or a Prince.',
++        requires_target: false, can_target_self: false, requires_guess: false),
++    new(key: :princess, name: 'Princess', value: 8, count_in_deck: 1,
++        effect: 'If you discard this card, you are out of the round.',
++        requires_target: false, can_target_self: false, requires_guess: false)
++  ].freeze
++
++  INDEX = CARDS.to_h { |card| [card.key, card] }.freeze # rubocop:disable Rails/IndexBy -- Keep this PORO dependency-free.
++  DECK = CARDS.flat_map { |card| [card] * card.count_in_deck }.freeze
++
++  private_constant :CARDS, :INDEX, :DECK
++
++  class << self
++    def all = CARDS
++    def [](key) = INDEX[key.to_sym]
++    def deck = DECK
++  end
++end
+diff --git a/spec/models/card_spec.rb b/spec/models/card_spec.rb
+new file mode 100644
+index 0000000..603ed17
+--- /dev/null
++++ b/spec/models/card_spec.rb
+@@ -0,0 +1,62 @@
++# frozen_string_literal: true
++
++require 'rails_helper'
++
++RSpec.describe Card, type: :model do # rubocop:disable Metrics/BlockLength
++  subject(:cards) { described_class.all }
++
++  let(:expected_cards) do
++    {
++      guard: [1, 5, true, false, true],
++      priest: [2, 2, true, false, false],
++      baron: [3, 2, true, false, false],
++      handmaid: [4, 2, false, false, false],
++      prince: [5, 2, true, true, false],
++      king: [6, 1, true, false, false],
++      countess: [7, 1, false, false, false],
++      princess: [8, 1, false, false, false]
++    }
++  end
++
++  it 'defines the eight classic cards with their values, counts, and flags' do
++    expect(cards.size).to eq(8)
++
++    expected_cards.each do |key, (value, count, requires_target, can_target_self, requires_guess)|
++      card = described_class[key]
++
++      expect(card).to have_attributes(
++        key: key,
++        name: key.to_s.capitalize,
++        value: value,
++        count_in_deck: count,
++        requires_target?: requires_target,
++        can_target_self?: can_target_self,
++        requires_guess?: requires_guess
++      )
++      expect(card.effect).to be_a(String).and be_present
++    end
++  end
++
++  it 'expands to a sixteen-card deck in the specified quantities' do
++    deck = described_class.deck
++
++    expect(deck.size).to eq(16)
++    expect(deck.tally.transform_keys(&:key)).to eq(expected_cards.transform_values { |(_, count, *)| count })
++  end
++
++  it 'looks cards up by symbol or string key' do
++    expect(described_class[:guard]).to be(cards.first)
++    expect(described_class['princess']).to be(cards.last)
++  end
++
++  it 'compares cards by value' do
++    expect(described_class[:guard]).to be < described_class[:priest]
++    expect(cards.max).to be(described_class[:princess])
++  end
++
++  it 'exposes only frozen catalogue values' do
++    expect(cards).to be_frozen
++    expect(described_class.deck).to be_frozen
++    expect(cards).to all(be_frozen)
++  end
++end # rubocop:enable Metrics/BlockLength

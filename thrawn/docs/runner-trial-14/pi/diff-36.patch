@@ -1,0 +1,63 @@
+diff --git a/app/controllers/games_controller.rb b/app/controllers/games_controller.rb
+index d49c5f7..b6cc1ed 100644
+--- a/app/controllers/games_controller.rb
++++ b/app/controllers/games_controller.rb
+@@ -22,7 +22,7 @@ class GamesController < ApplicationController
+ 
+   def join
+     game = Game.find(params[:id])
+-    return redirect_to game, alert: I18nt.t('flash.games.already_started') unless game.joinable?
++    return redirect_to game, alert: I18n.t('flash.games.already_started') unless game.joinable?
+ 
+     game.participants.find_or_create_by!(session_id: current_sid) do |p|
+       p.name = current_name
+@@ -32,10 +32,10 @@ class GamesController < ApplicationController
+ 
+   def start
+     game = Game.find(params[:id])
+-    return redirect_to game, alert: I18nt.t('flash.games.need_players') unless game.participants.size.between?(2, 4)
++    return redirect_to game, alert: I18n.t('flash.games.need_players') unless game.participants.size.between?(2, 4)
+ 
+     game.start!
+-    redirect_to game, notice: I18nt.t('flash.games.started')
++    redirect_to game, notice: I18n.t('flash.games.started')
+   end
+ 
+   # optional: find by 6-char code
+diff --git a/spec/requests/games_spec.rb b/spec/requests/games_spec.rb
+new file mode 100644
+index 0000000..10a554f
+--- /dev/null
++++ b/spec/requests/games_spec.rb
+@@ -0,0 +1,31 @@
++# frozen_string_literal: true
++
++require 'rails_helper'
++
++RSpec.describe 'Games', type: :request do
++  before do
++    post session_path, params: { name: 'Alice' }
++  end
++
++  describe 'POST /games/:id/join' do
++    it 'renders a flash message when the game has already started' do
++      game = Game.create!(max_players: 4, started_at: Time.current)
++
++      post join_game_path(game)
++      follow_redirect!
++
++      expect(response.body).to include('Game already started.')
++    end
++  end
++
++  describe 'POST /games/:id/start' do
++    it 'renders a flash message when there are fewer than two players' do
++      game = Game.create!(max_players: 4)
++
++      post start_game_path(game)
++      follow_redirect!
++
++      expect(response.body).to include('Need 2-4 players.')
++    end
++  end
++end

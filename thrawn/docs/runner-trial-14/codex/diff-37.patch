@@ -1,0 +1,176 @@
+diff --git a/app/models/game.rb b/app/models/game.rb
+index c1cdf62..aaffdf8 100644
+--- a/app/models/game.rb
++++ b/app/models/game.rb
+@@ -4,7 +4,9 @@ class Game < ApplicationRecord
+   has_many :participants, dependent: :destroy
+   has_many :moves, dependent: :destroy
+ 
+-  before_create { self.code ||= SecureRandom.alphanumeric(6).upcase }
++  before_validation(on: :create) { self.code ||= SecureRandom.alphanumeric(6).upcase }
++
++  validates :code, uniqueness: true
+ 
+   def started? = started_at.present?
+   def start! = update!(started_at: Time.current)
+diff --git a/app/models/participant.rb b/app/models/participant.rb
+index 217607b..a16aa35 100644
+--- a/app/models/participant.rb
++++ b/app/models/participant.rb
+@@ -3,4 +3,5 @@
+ class Participant < ApplicationRecord
+   belongs_to :game
+   validates :name, presence: true
++  validates :session_id, presence: true, uniqueness: { scope: :game_id }
+ end
+diff --git a/db/migrate/20260828000000_harden_games_and_participants.rb b/db/migrate/20260828000000_harden_games_and_participants.rb
+new file mode 100644
+index 0000000..6a847e1
+--- /dev/null
++++ b/db/migrate/20260828000000_harden_games_and_participants.rb
+@@ -0,0 +1,15 @@
++# frozen_string_literal: true
++
++class HardenGamesAndParticipants < ActiveRecord::Migration[8.1]
++  def change
++    remove_index :games, :code
++    add_index :games, :code, unique: true
++
++    change_table :participants, bulk: true do |t|
++      t.change_null :name, false
++      t.change_null :session_id, false
++      t.change_default :tokens, from: nil, to: 0
++    end
++    add_index :participants, %i[game_id session_id], unique: true
++  end
++end
+diff --git a/db/schema.rb b/db/schema.rb
+index 491ecf7..8aff973 100644
+--- a/db/schema.rb
++++ b/db/schema.rb
+@@ -10,38 +10,39 @@
+ #
+ # It's strongly recommended that you check this file into your version control system.
+ 
+-ActiveRecord::Schema[8.0].define(version: 2025_08_28_134411) do
++ActiveRecord::Schema[8.1].define(version: 2026_08_28_000000) do
+   # These are extensions that must be enabled in order to support this database
+   enable_extension "pg_catalog.plpgsql"
+ 
+   create_table "games", force: :cascade do |t|
+     t.string "code"
+-    t.datetime "started_at"
+-    t.integer "max_players"
+     t.datetime "created_at", null: false
++    t.integer "max_players"
++    t.datetime "started_at"
+     t.datetime "updated_at", null: false
+-    t.index ["code"], name: "index_games_on_code"
++    t.index ["code"], name: "index_games_on_code", unique: true
+   end
+ 
+   create_table "moves", force: :cascade do |t|
++    t.string "action"
++    t.datetime "created_at", null: false
+     t.bigint "game_id", null: false
+     t.bigint "participant_id", null: false
+-    t.string "action"
+     t.jsonb "payload"
+-    t.datetime "created_at", null: false
+     t.datetime "updated_at", null: false
+     t.index ["game_id"], name: "index_moves_on_game_id"
+     t.index ["participant_id"], name: "index_moves_on_participant_id"
+   end
+ 
+   create_table "participants", force: :cascade do |t|
+-    t.bigint "game_id", null: false
+-    t.string "name"
+-    t.string "session_id"
+-    t.integer "tokens"
+-    t.boolean "eliminated", default: false
+     t.datetime "created_at", null: false
++    t.boolean "eliminated", default: false
++    t.bigint "game_id", null: false
++    t.string "name", null: false
++    t.string "session_id", null: false
++    t.integer "tokens", default: 0
+     t.datetime "updated_at", null: false
++    t.index ["game_id", "session_id"], name: "index_participants_on_game_id_and_session_id", unique: true
+     t.index ["game_id"], name: "index_participants_on_game_id"
+     t.index ["session_id"], name: "index_participants_on_session_id"
+   end
+diff --git a/spec/models/game_spec.rb b/spec/models/game_spec.rb
+index 132b71c..2530cb2 100644
+--- a/spec/models/game_spec.rb
++++ b/spec/models/game_spec.rb
+@@ -7,4 +7,13 @@ RSpec.describe Game, type: :model do
+     g = Game.create!
+     expect(g.code).to be_present
+   end
++
++  it 'requires a unique code' do
++    described_class.create!(code: 'ABC123')
++
++    duplicate = described_class.new(code: 'ABC123')
++
++    expect(duplicate).not_to be_valid
++    expect(duplicate.errors[:code]).to include('has already been taken')
++  end
+ end
+diff --git a/spec/models/participant_spec.rb b/spec/models/participant_spec.rb
+new file mode 100644
+index 0000000..7c01dc0
+--- /dev/null
++++ b/spec/models/participant_spec.rb
+@@ -0,0 +1,51 @@
++# frozen_string_literal: true
++
++require 'rails_helper'
++
++RSpec.describe Participant, type: :model do # rubocop:disable Metrics/BlockLength
++  let(:game) { Game.create! }
++
++  it 'requires a session ID' do
++    participant = described_class.new(game:, name: 'Alice')
++
++    expect(participant).not_to be_valid
++    expect(participant.errors[:session_id]).to include("can't be blank")
++  end
++
++  it 'requires a unique session ID within a game' do
++    described_class.create!(game:, name: 'Alice', session_id: 'session-1')
++
++    duplicate = described_class.new(game:, name: 'Alice again', session_id: 'session-1')
++
++    expect(duplicate).not_to be_valid
++    expect(duplicate.errors[:session_id]).to include('has already been taken')
++  end
++
++  it 'allows the same session ID in different games' do
++    described_class.create!(game:, name: 'Alice', session_id: 'session-1')
++
++    participant = described_class.new(game: Game.create!, name: 'Alice', session_id: 'session-1')
++
++    expect(participant).to be_valid
++  end
++
++  it 'defaults tokens to zero' do
++    participant = described_class.create!(game:, name: 'Alice', session_id: 'session-1')
++
++    expect(participant.tokens).to eq(0)
++  end
++
++  it 'enforces session uniqueness within a game in the database' do
++    described_class.create!(game:, name: 'Alice', session_id: 'session-1')
++
++    expect do
++      described_class.insert!({ # rubocop:disable Rails/SkipsModelValidations -- exercises the database constraint
++                                game_id: game.id,
++                                name: 'Alice again',
++                                session_id: 'session-1',
++                                created_at: Time.current,
++                                updated_at: Time.current
++                              })
++    end.to raise_error(ActiveRecord::RecordNotUnique)
++  end
++end # rubocop:enable Metrics/BlockLength
