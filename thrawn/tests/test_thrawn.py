@@ -1215,3 +1215,90 @@ class TestFmtPaneOutput:
                         "isError": True, "result": {}}),
         ])
         assert "✗ bash failed" in out
+
+
+# ---------------------------------------------------------------------------
+# Batch dispatch, warm retries and abort evidence
+# ---------------------------------------------------------------------------
+
+class TestResolveTargets:
+    def _brief(self, repo, name, title):
+        p = repo / name
+        p.write_text(f"# {title}\n\nbody of {title}\n")
+        return str(p)
+
+    def test_single_target_unchanged(self, T, repo):
+        b = self._brief(repo, "one.md", "First")
+        intake = T.resolve_targets(repo, [b])
+        assert intake["kind"] != "multi"
+        assert "First" in intake["title"]
+
+    def test_multiple_targets_combined(self, T, repo):
+        a = self._brief(repo, "a.md", "First")
+        b = self._brief(repo, "b.md", "Second")
+        intake = T.resolve_targets(repo, [a, b])
+        assert intake["kind"] == "multi"
+        assert "+" in str(intake["ref"])
+        assert "First" in intake["text"] and "Second" in intake["text"]
+        assert "body of First" in intake["text"]
+
+    def test_multi_run_id(self, T, repo):
+        rid = T.make_run_id(repo, {"kind": "multi", "ref": "42+43",
+                                   "title": "x"})
+        assert rid.startswith("multi-42-43")
+
+
+class TestSessionResume:
+    def test_extract_claude_session(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text(json.dumps({"type": "system", "subtype": "init",
+                                   "session_id": "abc-123"}) + "\n")
+        assert T.extract_session_id(log) == "abc-123"
+
+    def test_extract_pi_session(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text(json.dumps({"type": "session", "id": "def-456"}) + "\n")
+        assert T.extract_session_id(log) == "def-456"
+
+    def test_extract_none(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text("plain output\n")
+        assert T.extract_session_id(log) is None
+
+    def test_resume_claude_appends(self, T):
+        argv = ["claude", "--model", "opus", "-p", "x"]
+        out = T.resume_argv(argv, "sid")
+        assert out[-2:] == ["--resume", "sid"]
+
+    def test_resume_pi_swaps_no_session(self, T):
+        argv = ["pi", "--no-session", "--mode", "json", "-p", "x"]
+        out = T.resume_argv(argv, "sid")
+        assert "--no-session" not in out
+        assert out[-2:] == ["--session", "sid"]
+
+    def test_resume_codex_cold(self, T):
+        argv = ["codex", "exec", "x"]
+        assert T.resume_argv(argv, "sid") == argv
+
+
+class TestAbortEvidence:
+    def test_abort_snapshots_patch_and_head(self, T, repo, monkeypatch):
+        monkeypatch.setenv("THRAWN_NO_HERDR", "1")
+        base = g("rev-parse", "HEAD", cwd=repo).stdout.strip()
+        g("checkout", "-b", "thrawn/x/t1", cwd=repo)
+        (repo / "new.txt").write_text("hello\n")
+        g("add", "new.txt", cwd=repo)
+        g("commit", "-q", "-m", "work", cwd=repo)
+        g("checkout", "main", cwd=repo)
+        state = {"run_id": "x", "created": "2026-01-01T00:00:00Z",
+                 "phase": "working", "base_commit": base,
+                 "tasks": {"t1": {"status": "done",
+                                  "branch": "thrawn/x/t1"}}}
+        T.save_state(repo, state)
+        T.cmd_abort(repo, "x")
+        after = T.load_state(repo, "x")
+        patch = T.run_dir(repo, "x") / "abort-t1.patch"
+        assert patch.exists() and "hello" in patch.read_text()
+        assert after["tasks"]["t1"]["head_commit"]
+        branches = g("branch", "--list", "thrawn/x/*", cwd=repo).stdout
+        assert branches.strip() == ""

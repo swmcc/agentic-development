@@ -407,6 +407,43 @@ def extract_usage(log: Path):
     return totals
 
 
+def extract_session_id(log: Path):
+    """The runner session id from a task log, or None.
+
+    claude announces it in the stream-json init event, pi in its session
+    event. Used by warm retries to resume the original exploration."""
+    try:
+        lines = log.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines[:200]:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if evt.get("type") == "system" and evt.get("subtype") == "init":
+            return evt.get("session_id")
+        if evt.get("type") == "session":
+            return evt.get("id")
+    return None
+
+
+def resume_argv(argv, session_id):
+    """Adapt a runner argv to resume an existing session where the CLI
+    supports it; unknown runners fall through to a cold start."""
+    if not argv or not session_id:
+        return argv
+    if Path(argv[0]).name == "claude":
+        return list(argv) + ["--resume", session_id]
+    if Path(argv[0]).name == "pi":
+        return [a for a in argv if a != "--no-session"] + \
+            ["--session", session_id]
+    return argv
+
+
 RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "usage limit", "429")
 
 
@@ -607,11 +644,32 @@ def resolve_target(repo: Path, target):
     die(f"target not understood: {target} (issue number or .md file)")
 
 
+def resolve_targets(repo: Path, targets):
+    """One intake from one or many targets. Multiple targets are combined
+    into a single brief so the planner sees them together and can decompose
+    across issues (shared tasks, sensible deps) instead of per-issue silos."""
+    targets = list(targets or [])
+    if len(targets) <= 1:
+        return resolve_target(repo, targets[0] if targets else None)
+    intakes = [resolve_target(repo, t) for t in targets]
+    return {
+        "kind": "multi",
+        "ref": "+".join(str(i["ref"]) for i in intakes),
+        "title": "; ".join(i["title"] for i in intakes)[:80],
+        "text": "\n\n---\n\n".join(
+            f"# Target {i['ref']}: {i['title']}\n\n{i['text']}"
+            for i in intakes),
+    }
+
+
 def make_run_id(repo: Path, intake: dict) -> str:
     if intake["kind"] == "github":
         base = f"gh-{intake['ref']}"
     elif intake["kind"] == "gitlab":
         base = f"gl-{intake['ref']}"
+    elif intake["kind"] == "multi":
+        refs = re.sub(r"[^0-9A-Za-z]+", "-", str(intake["ref"])).strip("-")
+        base = f"multi-{refs}"[:32]
     else:
         slug = re.sub(r"[^a-z0-9]+", "-", intake["title"].lower()).strip("-")[:24]
         base = slug or "brief"
@@ -1061,6 +1119,12 @@ def spawn_task(repo, cfg, state, plan, task, spawner, prompt_file="executor.md")
     argv = runner_argv(cfg, task["runner"], prompt)
     if argv is None:
         die(f"runner `{task['runner']}` not defined in runners.toml")
+    session = (state.get("resume_sessions") or {}).pop(tid, None)
+    if session:
+        warmed = resume_argv(argv, session)
+        if warmed is not argv:
+            argv = warmed
+            info(f"  ↻ {tid} resuming session {session[:12]}…")
 
     log, exit_file = task_paths(repo, run_id, tid)
     exit_file.unlink(missing_ok=True)
@@ -1097,6 +1161,9 @@ def poll_tasks(repo: Path, state: dict) -> None:
             usage = extract_usage(log)
             if usage:
                 ts["usage"] = usage
+            session = extract_session_id(log)
+            if session:
+                ts["session"] = session
             if code != 0 and hit_rate_limit(log):
                 ts["rate_limited"] = True
             if code == 0:
@@ -1707,6 +1774,22 @@ def cmd_runs(repo: Path) -> None:
 
 def cmd_abort(repo: Path, run_id) -> None:
     state = load_state(repo, run_id) if run_id else latest_run(repo)
+    # evidence first, destruction second: record final status + usage, then
+    # keep a per-task patch and head commit so aborted work is always
+    # recoverable without resorting to `git fsck` (learned the hard way).
+    poll_tasks(repo, state)
+    rdir = run_dir(repo, state["run_id"])
+    base = state.get("base_commit")
+    for tid, ts in state["tasks"].items():
+        branch = ts.get("branch")
+        if not (base and branch):
+            continue
+        head = try_run(["git", "rev-parse", branch], cwd=repo)
+        if head and head.returncode == 0:
+            ts["head_commit"] = head.stdout.strip()
+        diff = try_run(["git", "diff", f"{base}..{branch}"], cwd=repo)
+        if diff and diff.returncode == 0 and diff.stdout.strip():
+            (rdir / f"abort-{tid}.patch").write_text(diff.stdout)
     spawner = make_spawner()
     for ts in state["tasks"].values():
         if ts.get("handle"):
@@ -1724,7 +1807,8 @@ def cmd_abort(repo: Path, run_id) -> None:
         try_run(["herdr", "tab", "close", state["herdr_tab"]], timeout=5)
     state["phase"] = "aborted"
     save_state(repo, state)
-    info(f"aborted {state['run_id']} — worktrees removed, task branches deleted")
+    info(f"aborted {state['run_id']} — worktrees removed, task branches "
+         f"deleted (per-task patches kept in the run dir)")
 
 
 def _recovery_targets(state: dict, task_ids, verb: str):
@@ -1781,6 +1865,11 @@ def cmd_retry(repo: Path, cfg: dict, run_ref, task_ids,
     spawner = make_spawner()
     for tid in targets:
         ts = state["tasks"].pop(tid)
+        # warm retry: keep the failed attempt's session so the respawn can
+        # resume its exploration instead of starting cold. Not when the
+        # runner changes — a different CLI cannot resume another's session.
+        if ts.get("session") and not runner:
+            state.setdefault("resume_sessions", {})[tid] = ts["session"]
         if ts.get("handle"):
             spawner.close(ts["handle"])
         wt = ts.get("worktree")
@@ -1953,10 +2042,10 @@ def continue_run(repo: Path, cfg: dict, prev: dict, auto_yes: bool = False) -> N
     watch(repo, cfg, prev)
 
 
-def dispatch(repo: Path, cfg: dict, target, plan_only: bool,
+def dispatch(repo: Path, cfg: dict, targets, plan_only: bool,
              force_new: bool = False, auto_yes: bool = False) -> None:
     ensure_git_exclude(repo)
-    intake = resolve_target(repo, target)
+    intake = resolve_targets(repo, targets)
     if not plan_only and not force_new:
         prev = find_open_run(repo, intake)
         if prev:
@@ -2094,7 +2183,8 @@ def cmd_swarm(repo: Path, cfg: dict, issues, runner=None) -> None:
 
 USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
 
-  thrawn <issue#>              dispatch from a GitHub/GitLab issue
+  thrawn <issue#> [issue#…]    dispatch from GitHub/GitLab issues (several
+                               become one combined run, planned together)
   thrawn <brief.md>            dispatch from a markdown brief
   thrawn                       dispatch from ./THRAWN.md
                                (the plan is shown for approval before any
@@ -2117,7 +2207,9 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
   thrawn ship <run> --code N   push + open PR/MR (requires green + code)
   thrawn retry [run] [task…]   rerun failed tasks (default: all of them;
                                --runner X reroutes, --force discards
-                               uncommitted worktree changes)
+                               uncommitted worktree changes; same-runner
+                               retries resume the failed attempt's session
+                               where the CLI supports it)
   thrawn adopt [run] [task…]   accept a failed task's work as done —
                                commits anything it left unstaged
   thrawn integrate [run]       retry the integration phase
@@ -2216,9 +2308,12 @@ def main() -> None:
                     die(f"run {target} is {state['phase']} — re-planning after "
                         f"execution has started would orphan running work")
                 tgt = state["target"]
-                intake = (fetch_issue(repo, tgt["ref"])
-                          if tgt["kind"] in ("github", "gitlab")
-                          else read_brief(Path(tgt["ref"])))
+                if tgt["kind"] in ("github", "gitlab"):
+                    intake = fetch_issue(repo, tgt["ref"])
+                elif tgt["kind"] == "multi":
+                    intake = resolve_targets(repo, str(tgt["ref"]).split("+"))
+                else:
+                    intake = read_brief(Path(tgt["ref"]))
                 info(f"re-planning {target} from {tgt['kind']} {tgt['ref']} …")
                 plan = run_planner(repo, cfg, intake, target)
                 render_plan(repo, target, plan, full=full)
@@ -2230,7 +2325,7 @@ def main() -> None:
                 render_plan(repo, target,
                             json.loads(plan_path.read_text()), full=full)
         else:
-            dispatch(repo, cfg, target, plan_only=True)
+            dispatch(repo, cfg, rest, plan_only=True)
     elif sub == "watch":
         state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)
         if state["phase"] in ("shipped", "aborted"):
@@ -2270,7 +2365,7 @@ def main() -> None:
         ns = parser.parse_args(args[1:])
         ship(repo, cfg, ns.run_id, ns.code)
     else:
-        dispatch(repo, cfg, sub, plan_only=False, force_new=force_new,
+        dispatch(repo, cfg, args, plan_only=False, force_new=force_new,
                  auto_yes=auto_yes)
 
 
