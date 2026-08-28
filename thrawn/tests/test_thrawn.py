@@ -1076,3 +1076,142 @@ class TestSwarmEndToEnd:
         branches = g("branch", "--list", "thrawn/swarm/*",
                      cwd=swarm.repo).stdout
         assert branches.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Runner event parsing (claude stream-json + pi --mode json)
+# ---------------------------------------------------------------------------
+
+class TestDescribeEvent:
+    def test_claude_tool_use(self, T):
+        evt = {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": "make test"}}]}}
+        assert T._describe_event(evt) == "Bash: make test"
+
+    def test_pi_tool_execution_start(self, T):
+        evt = {"type": "tool_execution_start", "toolName": "bash",
+               "args": {"command": "echo hi"}}
+        assert T._describe_event(evt) == "bash: echo hi"
+
+    def test_pi_tool_path_hint(self, T):
+        evt = {"type": "tool_execution_start", "toolName": "write",
+               "args": {"path": "sample.txt", "content": "hi"}}
+        assert T._describe_event(evt) == "write: sample.txt"
+
+    def test_pi_turn_end_text(self, T):
+        evt = {"type": "turn_end", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "first line\nsecond"}]}}
+        assert T._describe_event(evt) == "first line"
+
+    def test_pi_turn_end_tool_call(self, T):
+        evt = {"type": "turn_end", "message": {"role": "assistant", "content": [
+            {"type": "toolCall", "name": "bash", "arguments": {"command": "ls"}}]}}
+        assert T._describe_event(evt) == "bash: ls"
+
+    def test_pi_text_delta_partial(self, T):
+        evt = {"type": "message_update", "assistantMessageEvent": {
+            "type": "text_delta", "partial": {"role": "assistant", "content": [
+                {"type": "text", "text": "working on it"}]}}}
+        assert T._describe_event(evt) == "working on it"
+
+    def test_pi_lifecycle_events(self, T):
+        assert T._describe_event({"type": "session", "id": "x"}) == "session started"
+        assert T._describe_event({"type": "agent_end"}) == "wrapping up"
+
+    def test_pi_user_message_ignored(self, T):
+        evt = {"type": "message_end", "message": {"role": "user", "content": [
+            {"type": "text", "text": "the prompt"}]}}
+        assert T._describe_event(evt) is None
+
+    def test_unknown_event_is_none(self, T):
+        assert T._describe_event({"type": "turn_start"}) is None
+
+
+class TestExtractUsage:
+    def test_claude_result_event(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text(json.dumps({
+            "type": "result", "subtype": "success", "total_cost_usd": 0.12,
+            "usage": {"input_tokens": 100, "output_tokens": 50,
+                      "cache_read_input_tokens": 900,
+                      "cache_creation_input_tokens": 200}}) + "\n")
+        u = T.extract_usage(log)
+        assert u["input"] == 100 and u["output"] == 50
+        assert u["cache_read"] == 900 and u["cache_write"] == 200
+        assert u["total"] == 1250 and u["cost_usd"] == 0.12
+
+    def test_pi_turn_end_sums_across_turns(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        turn = {"type": "turn_end", "message": {"role": "assistant", "usage": {
+            "input": 1000, "output": 20, "cacheRead": 0, "cacheWrite": 0,
+            "cost": {"total": 0.005}}}}
+        log.write_text(json.dumps(turn) + "\n" + json.dumps(turn) + "\n")
+        u = T.extract_usage(log)
+        assert u["input"] == 2000 and u["output"] == 40
+        assert u["total"] == 2040 and u["cost_usd"] == 0.01
+
+    def test_no_usage_is_none(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text("plain runner output\n{\"type\": \"turn_start\"}\nnot json {\n")
+        assert T.extract_usage(log) is None
+
+    def test_missing_log_is_none(self, T, tmp_path):
+        assert T.extract_usage(tmp_path / "absent.log") is None
+
+
+class TestRateLimit:
+    def test_marker_in_tail(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text("working\nError: usage limit reached for this window\n")
+        assert T.hit_rate_limit(log)
+
+    def test_clean_log(self, T, tmp_path):
+        log = tmp_path / "t.log"
+        log.write_text("all fine\ndone\n")
+        assert not T.hit_rate_limit(log)
+
+
+class TestFmtTokens:
+    def test_ranges(self, T):
+        assert T.fmt_tokens(980) == "980"
+        assert T.fmt_tokens(2040) == "2.0k"
+        assert T.fmt_tokens(1_250_000) == "1.2M"
+
+
+class TestFmtPaneOutput:
+    """`thrawn _fmt` renders pi JSONL as readable pane lines, no JSON soup."""
+
+    def run_fmt(self, lines):
+        proc = subprocess.run([str(BIN), "_fmt"], input="\n".join(lines) + "\n",
+                              capture_output=True, text=True)
+        return proc.stdout
+
+    def test_pi_events_render(self, T):
+        out = self.run_fmt([
+            json.dumps({"type": "session", "id": "x"}),
+            json.dumps({"type": "tool_execution_start", "toolName": "bash",
+                        "args": {"command": "echo hi"}}),
+            json.dumps({"type": "message_update", "assistantMessageEvent":
+                        {"type": "text_end", "content": "DONE"}}),
+            json.dumps({"type": "agent_end"}),
+        ])
+        assert "session started (pi)" in out
+        assert "▸ bash: echo hi" in out
+        assert "DONE" in out
+        assert "■ result: done" in out
+        assert "{" not in out
+
+    def test_pi_noise_suppressed_and_plain_passthrough(self, T):
+        out = self.run_fmt([
+            json.dumps({"type": "turn_start"}),
+            json.dumps({"type": "tool_execution_update", "partialResult": {}}),
+            "codex plain text line",
+        ])
+        assert out.strip() == "codex plain text line"
+
+    def test_pi_tool_error(self, T):
+        out = self.run_fmt([
+            json.dumps({"type": "tool_execution_end", "toolName": "bash",
+                        "isError": True, "result": {}}),
+        ])
+        assert "✗ bash failed" in out

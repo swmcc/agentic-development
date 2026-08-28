@@ -278,16 +278,39 @@ def _last_lines(path: Path, nbytes: int = 16384):
         return []
 
 
+def _tool_hint(args: dict) -> str:
+    return (args.get("description") or args.get("command")
+            or args.get("file_path") or args.get("path")
+            or args.get("pattern") or "")
+
+
+def _from_pi_message(msg: dict):
+    """Last meaningful thing in a pi assistant message: text or tool call."""
+    if (msg or {}).get("role") != "assistant":
+        return None
+    for block in reversed(msg.get("content", [])):
+        btype = block.get("type")
+        if btype == "toolCall":
+            hint = _tool_hint(block.get("arguments") or {})
+            name = block.get("name", "tool")
+            return f"{name}: {hint}" if hint else name
+        if btype == "text" and block.get("text", "").strip():
+            return block["text"].strip().splitlines()[0]
+    return None
+
+
 def _describe_event(evt: dict):
-    """One readable line from a claude --output-format stream-json event."""
+    """One readable line from a runner JSONL event.
+
+    Understands claude's --output-format stream-json and pi's --mode json;
+    unknown event types return None so the caller keeps scanning back."""
     etype = evt.get("type")
+    # --- claude stream-json ---
     if etype == "assistant":
         for block in reversed((evt.get("message") or {}).get("content", [])):
             btype = block.get("type")
             if btype == "tool_use":
-                arg = block.get("input") or {}
-                hint = (arg.get("description") or arg.get("command")
-                        or arg.get("file_path") or arg.get("pattern") or "")
+                hint = _tool_hint(block.get("input") or {})
                 name = block.get("name", "tool")
                 return f"{name}: {hint}" if hint else name
             if btype == "text" and block.get("text", "").strip():
@@ -295,6 +318,26 @@ def _describe_event(evt: dict):
     if etype == "system" and evt.get("subtype") == "init":
         return "session started"
     if etype == "result":
+        return "wrapping up"
+    # --- pi --mode json ---
+    if etype == "tool_execution_start":
+        hint = _tool_hint(evt.get("args") or {})
+        name = evt.get("toolName", "tool")
+        return f"{name}: {hint}" if hint else name
+    if etype == "message_update":
+        ame = evt.get("assistantMessageEvent") or {}
+        if ame.get("type") == "toolcall_end":
+            tc = ame.get("toolCall") or {}
+            hint = _tool_hint(tc.get("arguments") or {})
+            name = tc.get("name", "tool")
+            return f"{name}: {hint}" if hint else name
+        if ame.get("type") in ("text_delta", "text_end"):
+            return _from_pi_message(ame.get("partial") or {})
+    if etype in ("turn_end", "message_end"):
+        return _from_pi_message(evt.get("message") or {})
+    if etype == "session":
+        return "session started"
+    if etype == "agent_end":
         return "wrapping up"
     return None
 
@@ -316,6 +359,70 @@ def describe_activity(log: Path, width: int = 60) -> str:
             continue  # uninteresting event — keep looking back
         return line[:width]
     return ""
+
+
+def extract_usage(log: Path):
+    """Total token usage from a task log, or None if the log has no usage data.
+
+    claude stream-json reports cumulative usage once, in the final `result`
+    event; pi --mode json reports per-turn usage in each `turn_end` event, so
+    those are summed. Returned keys are normalised across runners."""
+    totals = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
+    cost = 0.0
+    found = False
+    try:
+        lines = log.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            evt = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        etype = evt.get("type")
+        if etype == "result" and isinstance(evt.get("usage"), dict):
+            u = evt["usage"]
+            totals["input"] += u.get("input_tokens", 0) or 0
+            totals["output"] += u.get("output_tokens", 0) or 0
+            totals["cache_read"] += u.get("cache_read_input_tokens", 0) or 0
+            totals["cache_write"] += u.get("cache_creation_input_tokens", 0) or 0
+            cost += evt.get("total_cost_usd", 0) or 0
+            found = True
+        elif etype == "turn_end":
+            u = (evt.get("message") or {}).get("usage")
+            if isinstance(u, dict):
+                totals["input"] += u.get("input", 0) or 0
+                totals["output"] += u.get("output", 0) or 0
+                totals["cache_read"] += u.get("cacheRead", 0) or 0
+                totals["cache_write"] += u.get("cacheWrite", 0) or 0
+                cost += ((u.get("cost") or {}).get("total", 0)) or 0
+                found = True
+    if not found:
+        return None
+    totals["total"] = sum(totals.values())
+    totals["cost_usd"] = round(cost, 4)
+    return totals
+
+
+RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "usage limit", "429")
+
+
+def hit_rate_limit(log: Path) -> bool:
+    """Did the tail of this log mention a rate/usage limit? (Subscription
+    quota exhaustion is the failure mode that matters on a plan.)"""
+    tail = " ".join(_last_lines(log, 8192)).lower()
+    return any(m in tail for m in RATE_LIMIT_MARKERS)
+
+
+def fmt_tokens(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
 
 
 def stream_cmd(argv, cwd, log: Path, label: str, timeout: int = 1800,
@@ -978,7 +1085,7 @@ def poll_tasks(repo: Path, state: dict) -> None:
     for tid, ts in state["tasks"].items():
         if ts["status"] != "running":
             continue
-        _, exit_file = task_paths(repo, state["run_id"], tid)
+        log, exit_file = task_paths(repo, state["run_id"], tid)
         if exit_file.exists():
             raw = exit_file.read_text().strip()
             if not raw:
@@ -987,6 +1094,11 @@ def poll_tasks(repo: Path, state: dict) -> None:
                 code = int(raw)
             except ValueError:
                 code = 1
+            usage = extract_usage(log)
+            if usage:
+                ts["usage"] = usage
+            if code != 0 and hit_rate_limit(log):
+                ts["rate_limited"] = True
             if code == 0:
                 # exit 0 is not enough — the work must actually be ON the branch
                 proc = try_run(
@@ -1069,9 +1181,12 @@ def render_board(repo: Path, state: dict, plan: dict, clear: bool = False) -> No
         ts = state["tasks"].get(tid, {"status": "pending"})
         icon = STATUS_ICON.get(ts["status"], "?")
         deps = f" {DIM}(after {','.join(task['deps'])}){RESET}" if task["deps"] else ""
+        tok = (f" {DIM}{fmt_tokens(ts['usage']['total'])} tok{RESET}"
+               if ts.get("usage") else "")
+        limited = f" {RED}rate limited{RESET}" if ts.get("rate_limited") else ""
         print(
             f"  {icon} {tid:<4} {task['title'][:44]:<44} "
-            f"{DIM}{task.get('runner','?'):<7}{RESET} {ts['status']}{deps}"
+            f"{DIM}{task.get('runner','?'):<7}{RESET} {ts['status']}{deps}{tok}{limited}"
         )
         if ts.get("status") == "running":
             log, _ = task_paths(repo, state["run_id"], tid)
@@ -2012,11 +2127,12 @@ USAGE = f"""{BOLD}⚔ thrawn{RESET} — plan deeply, execute in parallel
 
 
 def cmd_fmt() -> None:
-    """Hidden: render claude stream-json from stdin as readable pane output.
+    """Hidden: render runner JSONL from stdin as readable pane output.
 
     The raw JSONL still lands in the task log (tee runs before us) — this is
     purely so a herdr pane shows what the agent is doing, not JSON soup.
-    Non-JSON lines (codex, plain runners) pass through untouched."""
+    Understands claude stream-json and pi --mode json; other JSON events are
+    dropped, non-JSON lines (codex, plain runners) pass through untouched."""
     for line in sys.stdin:
         stripped = line.strip()
         if not stripped.startswith("{"):
@@ -2029,6 +2145,7 @@ def cmd_fmt() -> None:
             print(stripped, flush=True)
             continue
         etype = evt.get("type")
+        # --- claude stream-json ---
         if etype == "system" and evt.get("subtype") == "init":
             print(f"· session started ({evt.get('model', '?')})", flush=True)
         elif etype == "assistant":
@@ -2036,14 +2153,28 @@ def cmd_fmt() -> None:
                 if block.get("type") == "text" and block.get("text", "").strip():
                     print(block["text"].strip(), flush=True)
                 elif block.get("type") == "tool_use":
-                    arg = block.get("input") or {}
-                    hint = (arg.get("description") or arg.get("command")
-                            or arg.get("file_path") or arg.get("pattern") or "")
+                    hint = _tool_hint(block.get("input") or {})
                     name = block.get("name", "tool")
                     print(f"▸ {name}: {hint[:120]}" if hint else f"▸ {name}",
                           flush=True)
         elif etype == "result":
             print(f"■ result: {evt.get('subtype', 'done')}", flush=True)
+        # --- pi --mode json ---
+        elif etype == "session":
+            print("· session started (pi)", flush=True)
+        elif etype == "tool_execution_start":
+            hint = _tool_hint(evt.get("args") or {})
+            name = evt.get("toolName", "tool")
+            print(f"▸ {name}: {hint[:120]}" if hint else f"▸ {name}",
+                  flush=True)
+        elif etype == "tool_execution_end" and evt.get("isError"):
+            print(f"✗ {evt.get('toolName', 'tool')} failed", flush=True)
+        elif etype == "message_update":
+            ame = evt.get("assistantMessageEvent") or {}
+            if ame.get("type") == "text_end" and str(ame.get("content", "")).strip():
+                print(str(ame["content"]).strip(), flush=True)
+        elif etype == "agent_end":
+            print("■ result: done", flush=True)
 
 
 def main() -> None:
