@@ -1,12 +1,13 @@
+onboarding = false
 [keys]
 prefix = "ctrl+a"
 goto = "prefix+f"
 
 [ui.toast]
-delivery = "herdr"
+delivery = "system"
 
 [ui]
-show_agent_labels_on_pane_borders = false
+show_agent_labels_on_pane_borders = true
 
 [[keys.command]]
 key = "prefix+g"
@@ -36,5 +37,8 @@ width = "60%"
 height = "20%"
 
 [theme]
-name = "gruvbox"
+name = "vesper"
 auto_switch = false
+
+[experimental]
+switch_ascii_input_source_in_prefix = true
