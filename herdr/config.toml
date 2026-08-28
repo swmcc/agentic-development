@@ -20,7 +20,7 @@ height = "80%"
 [[keys.command]]
 key = "prefix+t"
 type = "popup"
-command = "exec bash -c 'read -rp \"Label: \" l; [ -n \"$l\" ] || exit 0; read -rp \"Path (default current dir): \" p; herdr-newspace \"$l\" \"${p:-$PWD}\"'"
+command = "exec bash -c 'read -rp \"Label: \" l; [ -n \"$l\" ] || exit 0; read -rp \"Path (default current dir): \" p; herdr-scaffold-workspace --cwd \"${p:-$PWD}\" --label \"$l\"'"
 description = "new workspace with standard tabs"
 width = "60%"
 height = "30%"
