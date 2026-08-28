@@ -113,3 +113,23 @@ routing with both in rotation) decides the split properly.
 Environment findings worth keeping regardless of runner choice: the
 codex-cli 0.7.0 config crash (silent exit 0 on four of five tasks) and
 codex 0.150.1's `tokens used` line as a future #12 data source.
+
+## Outcome (added after the fact)
+
+The aborted branches were recovered from git's object store, recreated
+under their original names and opened as ten PRs on rails_love_letter
+(#58 to #67), one per arm per issue. CI on the PRs agreed with the local
+scoring exactly: the two lint-skipping pi branches failed, the rest
+passed.
+
+Merged at 03:15Z: codex arms for #36 #37 #38 #39 and the pi arm for #56.
+Two merges went against the review recommendation here (pi's #38 was the
+stronger CI branch and pi's #56 was failing lint when merged) but main
+was brought green afterwards. All five issues closed, and the rest of the
+game engine chain (#40 to #57) was built and merged the same morning.
+
+Follow-ups filed: rails_love_letter#68 (restore the importmap audit the
+merged CI dropped) and agentic-development#15 (thrawn abort should poll
+tasks and snapshot per-branch patches before deleting evidence). The
+fuller narrative lives in the vault note
+`hubs/projects/agentic-development/thrawn-swarm-runner-experiment.md`.
