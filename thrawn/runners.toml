@@ -64,8 +64,15 @@ argv = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}
 notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-described scope"
 
 [runners.pi]
-argv = ["pi", "{prompt}"]
-notes = "pi agent; general-purpose alternative executor"
+# ChatGPT Plus/Pro subscription via pi's openai-codex provider (default model
+# gpt-5.5). Draws from the SAME quota pool as the codex runner and none of the
+# Claude plan quota, so route here to spare the claude allowance for the
+# planner/integrator. --mode json emits JSONL events (with per-message usage)
+# for the activity ticker; --no-session keeps runs ephemeral (warm retries via
+# --session are issue #13). pi has no sandbox: isolation comes from the
+# worktree, and committing from a linked worktree works (verified).
+argv = ["pi", "--provider", "openai-codex", "--no-session", "--mode", "json", "-p", "{prompt}"]
+notes = "GPT via ChatGPT subscription (separate quota pool from the claude runners); low/medium mechanical tasks, well-specified edits, config changes, docs"
 
 [runners.local]
 argv = ["ollama", "run", "qwen2.5-coder", "{prompt}"]
