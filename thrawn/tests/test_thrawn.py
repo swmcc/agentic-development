@@ -1343,3 +1343,45 @@ class TestSouls:
         rendered = T.render(T.load_prompt("executor.md"),
                             persona="I am the builder.\n\n")
         assert rendered.startswith("I am the builder.\n\n# Role")
+
+
+# ---------------------------------------------------------------------------
+# Lessons loop
+# ---------------------------------------------------------------------------
+
+class TestLessons:
+    def test_no_file_is_empty(self, T, repo):
+        assert T.load_lessons(repo) == ""
+
+    def test_bullets_filtered_and_capped(self, T):
+        out = ("Here are my thoughts:\n"
+               "- schema tasks always conflict, never split them\n"
+               "- haiku botched the LiveView work twice\n"
+               "not a bullet\n"
+               "- three\n"
+               "- four\n")
+        lessons = T.lessons_from_output(out)
+        assert len(lessons) == 3
+        assert lessons[0].startswith("- schema tasks")
+
+    def test_nothing_yields_no_lessons(self, T):
+        assert T.lessons_from_output("NOTHING\n") == []
+
+    def test_debrief_disabled_without_model(self, T, repo, monkeypatch):
+        def boom(*a, **kw):
+            raise AssertionError("debrief ran without a model configured")
+        monkeypatch.setattr(T, "try_run", boom)
+        T.run_debrief(repo, {"thrawn": {}}, {"run_id": "x", "phase": "green"})
+
+    def test_debrief_appends_lessons(self, T, repo, monkeypatch):
+        monkeypatch.setattr(
+            T, "try_run",
+            lambda *a, **kw: SimpleNamespace(
+                returncode=0, stdout="- always run bundle install first\n"))
+        state = {"run_id": "gh-1", "phase": "green", "tasks": {}}
+        T.run_debrief(repo, {"thrawn": {"debrief_model": "haiku"}}, state)
+        text = T.load_lessons(repo)
+        assert "bundle install" in text and "gh-1" in text
+
+    def test_planner_template_has_lessons_slot(self, T):
+        assert "{{lessons}}" in T.load_prompt("planner.md")

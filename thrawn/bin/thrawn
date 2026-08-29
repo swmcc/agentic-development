@@ -238,6 +238,69 @@ def render(template: str, **kw: str) -> str:
     return template
 
 
+def load_lessons(repo: Path) -> str:
+    """Accumulated per-repo lessons, or empty. Written by run_debrief,
+    injected into the planner alongside recon."""
+    try:
+        return (state_dir(repo) / "lessons.md").read_text().strip()
+    except OSError:
+        return ""
+
+
+def lessons_from_output(text: str):
+    """Durable lesson bullets from a debrief's output: lines starting
+    with `- `, capped at three. NOTHING (and any other prose) yields []."""
+    lessons = [ln.strip() for ln in text.splitlines()
+               if ln.strip().startswith("- ")]
+    return lessons[:3]
+
+
+def run_debrief(repo: Path, cfg: dict, state: dict) -> None:
+    """Best-effort post-run debrief: a cheap model turns the finished
+    run's state into at most a couple of durable lessons appended to
+    .thrawn/lessons.md. Disabled when [thrawn] debrief_model is empty
+    (as it is in tests); never allowed to take the run down with it."""
+    model = cfg.get("thrawn", {}).get("debrief_model", "")
+    if not model:
+        return
+    try:
+        summary = {
+            "run_id": state["run_id"],
+            "phase": state["phase"],
+            "target": state.get("target", {}),
+            "integration": {
+                k: v for k, v in (state.get("integration") or {}).items()
+                if k in ("attempt", "status", "merged", "checks")
+            },
+            "tasks": {
+                tid: {k: v for k, v in ts.items()
+                      if k in ("status", "runner", "exit", "note",
+                               "rate_limited")}
+                for tid, ts in state.get("tasks", {}).items()
+            },
+        }
+        prompt = render(
+            load_prompt("debrief.md"),
+            summary=json.dumps(summary, indent=2),
+            existing=load_lessons(repo) or "(none yet)",
+        )
+        proc = try_run(["claude", "--model", model, "-p", prompt],
+                       cwd=repo, timeout=300)
+        if proc is None or proc.returncode != 0:
+            return
+        lessons = lessons_from_output(proc.stdout)
+        if not lessons:
+            return
+        stamp = now_iso()[:10]
+        state_dir(repo).mkdir(exist_ok=True)
+        with (state_dir(repo) / "lessons.md").open("a") as fh:
+            for lesson in lessons:
+                fh.write(f"{lesson}  ({state['run_id']}, {stamp})\n")
+        info(f"debrief: {len(lessons)} lesson(s) → .thrawn/lessons.md")
+    except Exception:
+        pass
+
+
 def load_soul(cfg: dict, stage: str) -> str:
     """Persona text for a pipeline stage, or empty.
 
@@ -845,6 +908,7 @@ def run_planner(repo: Path, cfg: dict, intake: dict, run_id: str) -> dict:
         runners=runner_notes,
         max_tasks=str(tc["max_tasks"]),
         recon=load_recon(repo, cfg),
+        lessons=load_lessons(repo) or "(none yet)",
         persona=load_soul(cfg, "planner"),
     )
     argv = runner_argv(cfg, tc["planner"], prompt)
@@ -1610,6 +1674,7 @@ def integrate(repo: Path, cfg: dict, state: dict) -> None:
     notify(f"thrawn {run_id}: ALL GREEN — thrawn ship {run_id} "
            f"--code {state['ship_code']}", "done")
     render_board(repo, state, plan)
+    run_debrief(repo, cfg, state)
 
 
 # ---------------------------------------------------------------------------
@@ -1797,7 +1862,7 @@ def cmd_runs(repo: Path) -> None:
               f"{state.get('target', {}).get('title', '')[:48]}")
 
 
-def cmd_abort(repo: Path, run_id) -> None:
+def cmd_abort(repo: Path, run_id, cfg=None) -> None:
     state = load_state(repo, run_id) if run_id else latest_run(repo)
     # evidence first, destruction second: record final status + usage, then
     # keep a per-task patch and head commit so aborted work is always
@@ -1834,6 +1899,8 @@ def cmd_abort(repo: Path, run_id) -> None:
     save_state(repo, state)
     info(f"aborted {state['run_id']} — worktrees removed, task branches "
          f"deleted (per-task patches kept in the run dir)")
+    if cfg is not None:
+        run_debrief(repo, cfg, state)
 
 
 def _recovery_targets(state: dict, task_ids, verb: str):
@@ -2365,7 +2432,7 @@ def main() -> None:
         cmd_diff(repo, args[1] if len(args) > 1 else None,
                  args[2] if len(args) > 2 else None)
     elif sub == "abort":
-        cmd_abort(repo, args[1] if len(args) > 1 else None)
+        cmd_abort(repo, args[1] if len(args) > 1 else None, cfg)
     elif sub == "integrate":
         state = load_state(repo, args[1]) if len(args) > 1 else latest_run(repo)
         integrate(repo, cfg, state)

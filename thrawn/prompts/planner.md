@@ -13,6 +13,13 @@ Do NOT edit anything.
 
 {{recon}}
 
+# Lessons from previous runs in this repo
+
+Cheap post-run summaries. Trust them as routing and decomposition hints,
+but verify anything load-bearing against the repo itself:
+
+{{lessons}}
+
 # The work
 
 Run id: {{run_id}}

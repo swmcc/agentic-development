@@ -18,6 +18,7 @@ auto_recon = true             # dispatch runs recon first when no cache exists
 auto_fix = false              # ask before dispatching integrator agents (no silent fixing)
 allow_no_checks = false       # never declare green with zero checks configured
 swarm_tab = "agents"          # herdr tab that `thrawn swarm` panes collect in
+debrief_model = "haiku"       # post-run lessons debrief; empty disables
 
 [personas]
 # Souls (souls/<name>.md at the repo root) mapped to pipeline stages.
