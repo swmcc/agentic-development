@@ -21,8 +21,11 @@ Other issues being worked in this swarm (context only — not your work):
 
 1. Work only this issue. The other swarm agents have their own worktrees;
    duplicating their work creates conflicts the human has to untangle.
-2. Run any quick, focused tests relevant to your change if the repo
-   supports it.
+2. Before committing, run the repo's own checks and fix what they
+   surface: `make lint` and `make test` if there is a Makefile, otherwise
+   the closest equivalents (rubocop and rspec, mix credo and mix test,
+   ruff and pytest). There is no integrator behind you — a branch that
+   fails the checks is a branch the human has to fix by hand.
 3. COMMIT your work when done: stage the files you changed and create clear
    commits (this repo uses emoji commit prefixes). Leave the worktree
    clean — uncommitted work is lost.

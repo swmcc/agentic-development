@@ -25,8 +25,10 @@ Sibling tasks (context only — do NOT do their work):
    belong to sibling tasks creates merge conflicts and sinks the whole run.
 2. Follow the interfaces exactly as specified in your task (names,
    signatures, paths). Parallel tasks were told the same contracts.
-3. Run any quick, focused tests relevant to your change if the repo supports
-   it. Do not run the full suite — integration handles that.
+3. Before committing, run the repo's linter and fix what it surfaces
+   (`make lint` or the closest equivalent). Run quick, focused tests
+   relevant to your change if the repo supports it. Do not run the full
+   test suite — integration handles that.
 4. COMMIT your work when done: stage the specific files you changed and
    create clear commits (this repo uses emoji commit prefixes). Leave the
    worktree clean — uncommitted work is lost.
