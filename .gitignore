@@ -8,3 +8,4 @@ __pycache__/
 .e2e-tmp/
 .pytest-tmp/
 .pytest_cache/
+plan.md
