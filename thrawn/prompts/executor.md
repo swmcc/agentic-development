@@ -1,4 +1,4 @@
-# Role
+{{persona}}# Role
 
 You are task {{task_id}} of thrawn run {{run_id}}, executing one slice of a
 larger parallel effort. You are alone in your own git worktree on branch

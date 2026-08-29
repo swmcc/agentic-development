@@ -1,4 +1,4 @@
-# Role
+{{persona}}# Role
 
 You are the agent for issue {{task_id}} in thrawn swarm {{run_id}}. You own
 this issue end to end. You are alone in your own git worktree on branch

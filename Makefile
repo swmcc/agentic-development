@@ -33,7 +33,7 @@ all: install setup ## Install everything and configure
 install: install-herdr install-spreader install-lazygit ## Install all dependencies
 
 .PHONY: setup
-setup: setup-config setup-hooks setup-skills setup-workspaces setup-thrawn ## Configure herdr with this repo's settings
+setup: setup-config setup-hooks setup-skills setup-souls setup-workspaces setup-thrawn ## Configure herdr with this repo's settings
 
 # ============================================================================
 # 📦 Installation
@@ -137,6 +137,12 @@ setup-skills: ## Symlink Claude Code skills
 		echo "  $(YELLOW)~/.claude/skills/$$name$(RESET)"; \
 	done
 	@chmod +x $(REPO_DIR)/skills/*/*.sh 2>/dev/null || true
+
+.PHONY: setup-souls
+setup-souls: ## Symlink the souls roster to ~/.claude/souls
+	@echo "$(GREEN)Setting up souls...$(RESET)"
+	@ln -sfn $(REPO_DIR)/souls $(HOME)/.claude/souls
+	@echo "  $(YELLOW)~/.claude/souls$(RESET) -> repo souls/"
 
 .PHONY: setup-workspaces
 setup-workspaces: ## Create all workspaces using herdr-spreader
@@ -246,6 +252,7 @@ unlink: ## Remove all symlinks (keeps tools and machine-local configs)
 	@rm -f $(CLAUDE_HOOKS_DIR)/herdr-agent-state.sh
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
 	@for s in $(REPO_DIR)/skills/*/; do rm -f $(CLAUDE_SKILLS_DIR)/$$(basename "$$s"); done
+	@rm -f $(HOME)/.claude/souls
 	@rm -f $(HOME)/.local/bin/thrawn
 	@rm -f $(HOME)/bin/thrawn
 	@echo "$(GREEN)Symlinks removed$(RESET)"

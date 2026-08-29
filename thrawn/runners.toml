@@ -19,6 +19,15 @@ auto_fix = false              # ask before dispatching integrator agents (no sil
 allow_no_checks = false       # never declare green with zero checks configured
 swarm_tab = "agents"          # herdr tab that `thrawn swarm` panes collect in
 
+[personas]
+# Souls (souls/<name>.md at the repo root) mapped to pipeline stages.
+# Empty = no persona and the prompt renders exactly as it always did.
+# The same files serve interactive agents via ~/.claude/souls (see #16).
+planner = ""
+integrator = ""
+executor = ""
+swarm = ""
+
 [checks]
 # Ran in the integration worktree after merging. Empty = auto-detect from
 # Makefile (check -> lint+test). Override per-repo in <repo>/.thrawn.toml.

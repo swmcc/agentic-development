@@ -238,6 +238,27 @@ def render(template: str, **kw: str) -> str:
     return template
 
 
+def load_soul(cfg: dict, stage: str) -> str:
+    """Persona text for a pipeline stage, or empty.
+
+    Stages map to souls in the [personas] table of runners.toml
+    (`planner = "tactician"`). Soul files are plain markdown, one per
+    character, in <repo>/souls/ (symlinked to ~/.claude/souls by
+    `make setup-souls`) so interactive agents read the same character.
+    An empty mapping renders prompts byte-identically to having no slot."""
+    name = (cfg.get("personas") or {}).get(stage, "")
+    if not name:
+        return ""
+    for base in (install_root().parent / "souls",
+                 Path.home() / ".claude" / "souls"):
+        path = base / f"{name}.md"
+        if path.exists():
+            return path.read_text().strip() + "\n\n"
+    info(f"{YELLOW}soul `{name}` for stage `{stage}` not found — "
+         f"running without a persona{RESET}")
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Run state
 # ---------------------------------------------------------------------------
@@ -824,6 +845,7 @@ def run_planner(repo: Path, cfg: dict, intake: dict, run_id: str) -> dict:
         runners=runner_notes,
         max_tasks=str(tc["max_tasks"]),
         recon=load_recon(repo, cfg),
+        persona=load_soul(cfg, "planner"),
     )
     argv = runner_argv(cfg, tc["planner"], prompt)
     if argv is None:
@@ -1115,6 +1137,8 @@ def spawn_task(repo, cfg, state, plan, task, spawner, prompt_file="executor.md")
         )
         or "(none)",
         recon=load_recon(repo, cfg),
+        persona=load_soul(
+            cfg, "swarm" if prompt_file == "swarm.md" else "executor"),
     )
     argv = runner_argv(cfg, task["runner"], prompt)
     if argv is None:
@@ -1370,6 +1394,7 @@ def run_integrator_agent(repo, cfg, state, worktree, mode, detail) -> bool:
         mode=mode,
         detail=detail,
         branch=state["integration"]["branch"],
+        persona=load_soul(cfg, "integrator"),
     )
     argv = runner_argv(cfg, cfg["thrawn"]["integrator"], prompt)
     if argv is None:

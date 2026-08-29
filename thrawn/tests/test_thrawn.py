@@ -1302,3 +1302,44 @@ class TestAbortEvidence:
         assert after["tasks"]["t1"]["head_commit"]
         branches = g("branch", "--list", "thrawn/x/*", cwd=repo).stdout
         assert branches.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Souls (persona slot — must be inert when unmapped)
+# ---------------------------------------------------------------------------
+
+class TestSouls:
+    def test_unmapped_stage_is_empty(self, T):
+        assert T.load_soul({"personas": {}}, "planner") == ""
+        assert T.load_soul({}, "planner") == ""
+        assert T.load_soul({"personas": {"planner": ""}}, "planner") == ""
+
+    def test_mapped_soul_is_loaded(self, T, tmp_path, monkeypatch):
+        inst = tmp_path / "inst"
+        (tmp_path / "souls").mkdir()
+        (tmp_path / "souls" / "tester.md").write_text("I am the tester.\n")
+        monkeypatch.setattr(T, "install_root", lambda: inst)
+        out = T.load_soul({"personas": {"executor": "tester"}}, "executor")
+        assert out == "I am the tester.\n\n"
+
+    def test_missing_soul_falls_back_to_plain(self, T, tmp_path, monkeypatch):
+        monkeypatch.setattr(T, "install_root", lambda: tmp_path / "inst")
+        monkeypatch.setattr(T.Path, "home", classmethod(lambda cls: tmp_path))
+        out = T.load_soul({"personas": {"swarm": "ghost"}}, "swarm")
+        assert out == ""
+
+    def test_templates_carry_the_slot(self, T):
+        for name in ("planner.md", "executor.md", "integrator.md", "swarm.md"):
+            assert T.load_prompt(name).startswith("{{persona}}# Role"), name
+
+    def test_empty_persona_renders_byte_identical(self, T):
+        tpl = T.load_prompt("swarm.md")
+        rendered = T.render(tpl, persona="")
+        assert rendered.startswith("# Role")
+        assert "{{persona}}" not in rendered
+        assert rendered == tpl.replace("{{persona}}", "")
+
+    def test_filled_persona_leads_the_prompt(self, T):
+        rendered = T.render(T.load_prompt("executor.md"),
+                            persona="I am the builder.\n\n")
+        assert rendered.startswith("I am the builder.\n\n# Role")

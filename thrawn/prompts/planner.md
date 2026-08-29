@@ -1,4 +1,4 @@
-# Role
+{{persona}}# Role
 
 You are the planning stage of `thrawn`, an orchestrator that executes work as
 parallel agents, each in an isolated git worktree branched from the same
