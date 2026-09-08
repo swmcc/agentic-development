@@ -108,10 +108,12 @@ setup-config: ## Symlink herdr config files (machine-local overrides win)
 	@mkdir -p $(LOCAL_BIN)
 	@ln -sf $(REPO_DIR)/herdr/scripts/scaffold-workspace.sh $(LOCAL_BIN)/herdr-scaffold-workspace
 	@ln -sf $(REPO_DIR)/herdr/scripts/gen-spreader.sh $(LOCAL_BIN)/herdr-gen-spreader
+	@ln -sf $(REPO_DIR)/herdr/scripts/jira-show.sh $(LOCAL_BIN)/jira-show
 	@chmod +x $(REPO_DIR)/herdr/scripts/*.sh
 	@echo "  $(YELLOW)~/.config/herdr/setup-tabs.sh$(RESET)"
 	@echo "  $(YELLOW)~/.local/bin/herdr-scaffold-workspace$(RESET)"
 	@echo "  $(YELLOW)~/.local/bin/herdr-gen-spreader$(RESET)"
+	@echo "  $(YELLOW)~/.local/bin/jira-show$(RESET)"
 
 .PHONY: setup-hooks
 setup-hooks: ## Symlink agent integration hooks

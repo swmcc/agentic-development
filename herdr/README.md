@@ -12,6 +12,7 @@ My [Herdr](https://herdr.dev) terminal multiplexer configuration for agentic dev
 | `scripts/gen-spreader.sh` | Generate a repo list by scanning a directory |
 | `scripts/scaffold-workspace.sh` | Apply the standard tab layout to a live workspace |
 | `scripts/setup-tabs.sh` | Tab creation helper script |
+| `scripts/jira-show.sh` | Render a Jira ticket as markdown — backs the `prefix+j` popup |
 | `hooks/claude-agent-state.sh` | Claude Code integration hook |
 | `hooks/codex-agent-state.sh` | Codex integration hook |
 
@@ -106,6 +107,7 @@ ntfy sink and the two rules, subscribe to the topic in the ntfy app, then
 1. Install [Herdr](https://herdr.dev)
 2. Optionally install herdr-spreader: `cargo install herdr-spreader`
 3. `jq` and `lazygit` are required by the standard layout
+4. `glow` is required by the `prefix+j` Jira viewer, plus a token in the Keychain
 
 The simplest route is `make setup-config` from the repo root, which creates every
 symlink below. To do it by hand:
@@ -127,6 +129,7 @@ ln -sf ~/Code/agentic-development/herdr/scripts/setup-tabs.sh ~/.config/herdr/se
 mkdir -p ~/.local/bin
 ln -sf ~/Code/agentic-development/herdr/scripts/scaffold-workspace.sh ~/.local/bin/herdr-scaffold-workspace
 ln -sf ~/Code/agentic-development/herdr/scripts/gen-spreader.sh ~/.local/bin/herdr-gen-spreader
+ln -sf ~/Code/agentic-development/herdr/scripts/jira-show.sh ~/.local/bin/jira-show
 ```
 
 Symlink `config.local.toml` / `repos.local.yaml` instead of the repo copies where
@@ -155,6 +158,38 @@ ln -sf ~/Code/agentic-development/herdr/hooks/codex-agent-state.sh ~/.codex/herd
 - **`prefix+g`**: Open lazygit in a popup (80% width/height)
 - **`prefix+t`**: Create a new workspace with the standard tabs (prompts for label and path)
 - **`prefix+o`**: Capture a thought into today's Obsidian daily note
+- **`prefix+j`**: Read a Jira ticket in a popup — see [Jira ticket viewer](#jira-ticket-viewer)
+
+### Jira ticket viewer
+
+`prefix+j` prompts for a key and renders the ticket through `glow`: status, assignee,
+priority, epic, labels, links, subtasks, the description and the comments. `q` closes it.
+A bare number is expanded against the default project, so `7656` means `COS-7656`.
+
+`scripts/jira-show.sh` calls the Jira REST API directly rather than going through an
+agent. That is deliberate: a headless `claude -p` lookup against the Atlassian MCP
+measured **20–30 seconds** — acceptable for a slash command, useless for a keypress.
+Talking to the API is roughly a third of a second.
+
+**Setup.** The token lives in the macOS Keychain, so nothing sensitive is in this repo
+or in a dotfile. Create one at
+[id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens), then:
+
+```bash
+security add-generic-password -s jira-api-token \
+  -a stephen.mccullough@white.space -w 'PASTE_TOKEN' -U
+```
+
+Run that in a normal shell rather than pasting the token into an agent session. If the
+token is missing, `jira-show` prints these instructions instead of failing silently.
+
+**Overrides**, all environment variables with sensible defaults: `JIRA_SITE`,
+`JIRA_EMAIL`, `JIRA_DEFAULT_PROJECT`, `JIRA_KEYCHAIN_SERVICE`.
+
+Requires `glow` (already a dependency of the standard layout via `bat`/`glow`), `curl`
+and `python3`. The description is Atlassian Document Format, converted to markdown by an
+embedded renderer covering headings, marks, links, nested lists, fenced code, blockquotes,
+rules, panels and tables.
 
 ### Theme
 

@@ -36,6 +36,19 @@ description = "capture a thought into today's daily note"
 width = "60%"
 height = "20%"
 
+# Read a Jira ticket without leaving the terminal — body, status, people,
+# links and comments. Talks to the REST API directly rather than through an
+# agent: a headless `claude -p` lookup measured 20-30s, which is fine for a
+# slash command and useless for a keypress. Needs a token in the Keychain;
+# `jira-show` tells you how if it is missing. `q` closes the pager.
+[[keys.command]]
+key = "prefix+j"
+type = "popup"
+command = "exec bash -c 'read -rp \"Ticket: \" k; [ -n \"$k\" ] || exit 0; jira-show \"$k\" | glow -p -'"
+description = "show a jira ticket"
+width = "85%"
+height = "85%"
+
 [theme]
 name = "vesper"
 auto_switch = false
