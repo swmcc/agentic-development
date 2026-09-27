@@ -1,6 +1,6 @@
 # Herdr Configuration
 
-My [Herdr](https://herdr.io) terminal multiplexer configuration for agentic development workflows.
+My [Herdr](https://herdr.dev) terminal multiplexer configuration for agentic development workflows.
 
 ## Files
 
@@ -59,11 +59,29 @@ a silent fallback, so a typo can't quietly hand you the wrong repos.
 `make unlink` leaves both local files alone — they're yours, and nothing in the
 repo can reconstruct their contents.
 
+## Notifications
+
+Blocked/done agent alerts go to a phone via [ntfy](https://ntfy.sh), routed by
+the [notify-router](https://github.com/pradyb/herdr-notify-router) plugin
+(herdr ≥ 0.9.1):
+
+```bash
+herdr plugin install pradyb/herdr-notify-router --yes
+```
+
+The config is machine-local (`~/.config/herdr/plugins/config/pradyb.notify-router/notify.toml`,
+chmod 600 — it names the ntfy topic, which is the only secret). Current policy:
+`blocked` → push after 30s (cancelled if the agent unblocks itself, skipped for
+the focused pane), `done` → push, 5-minute dedupe per pane+status. On a new
+machine: install the plugin, write a `notify.toml` with an `[sinks.phone]`
+ntfy sink and the two rules, subscribe to the topic in the ntfy app, then
+`herdr plugin action invoke test --plugin pradyb.notify-router`.
+
 ## Installation
 
 ### Prerequisites
 
-1. Install [Herdr](https://herdr.io)
+1. Install [Herdr](https://herdr.dev)
 2. Optionally install herdr-spreader: `cargo install herdr-spreader`
 3. `jq` and `lazygit` are required by the standard layout
 

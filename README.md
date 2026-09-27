@@ -24,8 +24,9 @@ make status
 
 | Path | Purpose |
 |------|---------|
-| `herdr/` | [Herdr](https://herdr.io) terminal multiplexer configuration |
+| `herdr/` | [Herdr](https://herdr.dev) terminal multiplexer configuration |
 | `skills/` | Claude Code skills, symlinked into `~/.claude/skills` |
+| `souls/` | 🎭 Character roster for agents — one file per persona, consumed by thrawn, `~/.claude/agents` wrappers and `/soul` |
 | `thrawn/` | ⚔ Parallel agent orchestrator — plan with fable, execute with opus/haiku/codex/local in worktrees |
 | `Makefile` | Installation and setup automation |
 
