@@ -182,6 +182,7 @@ The planner routes each task by complexity. Defaults in
 | `opus-plan` | `claude --model opus --permission-mode plan` | planning only (read-only, default) |
 | `fable-plan` | `claude --model claude-fable-5 --permission-mode plan` | planning for hard tickets — Mythos quota, per-repo opt-in |
 | `opus` | `claude --model opus` | high-complexity, architectural |
+| `sonnet` | `claude --model sonnet` | ordinary implementation work (default fallback) |
 | `haiku` | `claude --model haiku` | mechanical, well-specified |
 | `codex` | `codex exec --full-auto --dangerously-bypass-approvals-and-sandbox` | focused codegen |
 | `pi` | `pi` | alternative executor |

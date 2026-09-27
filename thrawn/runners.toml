@@ -9,8 +9,8 @@ planner = "opus-plan"         # deep-think model (read-only exploration); fable-
                               # costs Mythos-tier quota — override per-repo in
                               # .thrawn.toml only for genuinely architectural tickets
 integrator = "opus"           # merges conflicts, fixes failing checks
-default_runner = "opus"       # fallback when the planner picks something odd
-allowed_runners = ["opus", "haiku", "codex", "local", "pi"]
+default_runner = "sonnet"     # fallback when the planner picks something odd
+allowed_runners = ["opus", "sonnet", "haiku", "codex", "local", "pi"]
 max_tasks = 6
 integrator_attempts = 2
 poll_seconds = 2
@@ -59,6 +59,10 @@ notes = "internal — planning only; Mythos-tier quota, reserve for hard tickets
 # so `thrawn watch`/`status` can show live activity (plain -p buffers until exit)
 argv = ["claude", "--model", "opus", "-p", "{prompt}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
 notes = "strongest executor; architectural work, tricky refactors, anything touching many files or requiring judgement"
+
+[runners.sonnet]
+argv = ["claude", "--model", "sonnet", "-p", "{prompt}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
+notes = "the mid-tier: ordinary, well-understood implementation work — a known pattern in a known codebase. Route here unless the task genuinely needs opus-grade judgement or is mechanical enough for haiku/pi/codex"
 
 [runners.haiku]
 argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
