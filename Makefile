@@ -104,13 +104,11 @@ setup-config: ## Symlink herdr config files (machine-local overrides win)
 		ln -sf $(REPO_DIR)/herdr/spreader.yaml $(HERDR_CONFIG_DIR)/spreader.yaml; \
 		echo "  $(YELLOW)~/.config/herdr/spreader.yaml$(RESET) -> repo herdr/spreader.yaml"; \
 	fi
-	@ln -sf $(REPO_DIR)/herdr/scripts/setup-spaces.sh $(HERDR_CONFIG_DIR)/setup-spaces.sh
 	@ln -sf $(REPO_DIR)/herdr/scripts/setup-tabs.sh $(HERDR_CONFIG_DIR)/setup-tabs.sh
 	@mkdir -p $(LOCAL_BIN)
 	@ln -sf $(REPO_DIR)/herdr/scripts/scaffold-workspace.sh $(LOCAL_BIN)/herdr-scaffold-workspace
 	@ln -sf $(REPO_DIR)/herdr/scripts/gen-spreader.sh $(LOCAL_BIN)/herdr-gen-spreader
 	@chmod +x $(REPO_DIR)/herdr/scripts/*.sh
-	@echo "  $(YELLOW)~/.config/herdr/setup-spaces.sh$(RESET)"
 	@echo "  $(YELLOW)~/.config/herdr/setup-tabs.sh$(RESET)"
 	@echo "  $(YELLOW)~/.local/bin/herdr-scaffold-workspace$(RESET)"
 	@echo "  $(YELLOW)~/.local/bin/herdr-gen-spreader$(RESET)"
@@ -245,6 +243,8 @@ unlink: ## Remove all symlinks (keeps tools and machine-local configs)
 	@# are yours, not ours, and nothing in the repo can regenerate their contents.
 	@rm -f $(HERDR_CONFIG_DIR)/config.toml
 	@rm -f $(HERDR_CONFIG_DIR)/spreader.yaml
+	@# setup-spaces.sh is retired; the rm stays so unlink still clears the
+	@# symlink older setups created.
 	@rm -f $(HERDR_CONFIG_DIR)/setup-spaces.sh
 	@rm -f $(HERDR_CONFIG_DIR)/setup-tabs.sh
 	@rm -f $(LOCAL_BIN)/herdr-scaffold-workspace

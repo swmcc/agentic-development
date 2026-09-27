@@ -11,7 +11,6 @@ My [Herdr](https://herdr.io) terminal multiplexer configuration for agentic deve
 | `scripts/resolve-repos.sh` | Work out which repo list is in effect, and print it |
 | `scripts/gen-spreader.sh` | Generate a repo list by scanning a directory |
 | `scripts/scaffold-workspace.sh` | Apply the standard tab layout to a live workspace |
-| `scripts/setup-spaces.sh` | Automation script for workspace creation |
 | `scripts/setup-tabs.sh` | Tab creation helper script |
 | `hooks/claude-agent-state.sh` | Claude Code integration hook |
 | `hooks/codex-agent-state.sh` | Codex integration hook |
@@ -82,7 +81,6 @@ ln -sf ~/Code/agentic-development/herdr/config.toml ~/.config/herdr/config.toml
 ln -sf ~/Code/agentic-development/herdr/spreader.yaml ~/.config/herdr/spreader.yaml
 
 # Symlink automation scripts
-ln -sf ~/Code/agentic-development/herdr/scripts/setup-spaces.sh ~/.config/herdr/setup-spaces.sh
 ln -sf ~/Code/agentic-development/herdr/scripts/setup-tabs.sh ~/.config/herdr/setup-tabs.sh
 
 # Put the scripts on PATH
@@ -173,17 +171,6 @@ the workspace label reduced to `[a-z][a-z0-9_-]{0,31}`. On first launch in a new
 directory, Codex asks whether you trust its contents; the script reports the
 agent as not ready and moves on, leaving the prompt for you to answer.
 
-### Manual workspace setup
-
-```bash
-# Run the setup script — reads whichever repo list is active
-~/.config/herdr/setup-spaces.sh
-```
-
-It takes its project list from `resolve-repos.sh` rather than carrying its own
-copy, so it can't drift from `spreader.yaml`. Directories that don't exist are
-reported and skipped.
-
 ## Customisation
 
 Edit `spreader.yaml` for your personal list, or `~/.config/herdr/repos.local.yaml`
@@ -210,7 +197,3 @@ for this machine's. Each workspace follows this structure:
 
 Give every tab at least one pane — spreader warns about tabs declared with a
 bare label and no `panes:` block.
-
-`setup-spaces.sh` parses this shape without a YAML library, matching a `- name:`
-line followed by a `root:` line. Reordering those two keys within a workspace
-will hide it from that script (herdr-spreader itself doesn't care).

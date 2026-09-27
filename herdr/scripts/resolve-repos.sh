@@ -29,7 +29,7 @@ case "${1:-}" in
 esac
 
 # Real path of this script, following symlinks, so the repo copy of spreader.yaml
-# is still findable when we are invoked through ~/.config/herdr/setup-spaces.sh.
+# is still findable if we are ever invoked through a symlink.
 # Not `readlink -f`: absent from older BSD userlands.
 self="${BASH_SOURCE[0]}"
 while [ -L "$self" ]; do
