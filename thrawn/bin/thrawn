@@ -949,14 +949,53 @@ def _first_match(pattern: str, text: str):
     return m.group(1) if m else None
 
 
-def herdr_labeled_tab(label: str):
+def workspace_for_path(panes, path):
+    """Pure resolution: given pane dicts from `herdr pane list` and a
+    directory, return the workspace_id whose panes live in it, under it,
+    or above it. Workspaces carry no cwd in the herdr API — panes do —
+    so a workspace is matched through its panes' working directories.
+    None when no pane matches, or when panes from more than one
+    workspace do (ambiguous — better to fall back than guess)."""
+    path = str(path).rstrip("/")
+    if not path:
+        return None
+    hits = set()
+    for pane in panes:
+        workspace = pane.get("workspace_id")
+        if not workspace:
+            continue
+        for key in ("cwd", "foreground_cwd"):
+            cwd = (pane.get(key) or "").rstrip("/")
+            if cwd and (cwd == path or cwd.startswith(path + "/")
+                        or path.startswith(cwd + "/")):
+                hits.add(workspace)
+                break
+    return hits.pop() if len(hits) == 1 else None
+
+
+def herdr_workspace_for_repo(repo):
+    """Resolve the herdr workspace hosting `repo` by matching pane working
+    directories — the fallback when thrawn isn't running inside a herdr
+    pane and `herdr pane current` has nothing to say."""
+    proc = try_run(["herdr", "pane", "list"], timeout=5)
+    try:
+        panes = json.loads(proc.stdout)["result"]["panes"] if proc else []
+    except (json.JSONDecodeError, KeyError, TypeError):
+        panes = []
+    return workspace_for_path(panes, repo)
+
+
+def herdr_labeled_tab(label: str, repo=None):
     """Find (or create) the tab called `label` in the workspace thrawn was
-    invoked from. Returns (tab_id, created) — (None, False) when the
-    workspace can't be determined (not inside a herdr pane)."""
+    invoked from. Outside a herdr pane the workspace is resolved by
+    matching `repo` against pane working directories instead. Returns
+    (tab_id, created) — (None, False) when no workspace resolves."""
     proc = try_run(["herdr", "pane", "current"], timeout=5)
     workspace = _first_match(
         r'"workspace_id"\s*:\s*"([^"]+)"', (proc.stdout if proc else "") or ""
     )
+    if not workspace and repo is not None:
+        workspace = herdr_workspace_for_repo(repo)
     if not workspace:
         return None, False
     proc = try_run(["herdr", "tab", "list", "--workspace", workspace], timeout=5)
@@ -2251,7 +2290,7 @@ def cmd_swarm(repo: Path, cfg: dict, issues, runner=None) -> None:
     # panes collect in a shared tab (default label: agents) in the
     # workspace thrawn was invoked from — no per-run ⚔ tab is created
     tab_label = cfg["thrawn"]["swarm_tab"]
-    tab, fresh = (herdr_labeled_tab(tab_label)
+    tab, fresh = (herdr_labeled_tab(tab_label, repo)
                   if herdr_available() else (None, False))
     if herdr_available() and not tab:
         info(f"{YELLOW}couldn't find or create a `{tab_label}` tab — panes "

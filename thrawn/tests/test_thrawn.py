@@ -889,6 +889,70 @@ class TestSwarmSpawner:
         monkeypatch.setattr(T, "try_run", fake_herdr({}))
         assert T.herdr_labeled_tab("agents") == (None, False)
 
+    def test_labeled_tab_resolved_from_pane_cwds_outside_herdr(
+            self, T, monkeypatch):
+        # no "pane current" response: launched from a plain terminal, but
+        # the workspace is still found by matching the repo against pane cwds
+        monkeypatch.setattr(T, "try_run", fake_herdr({
+            "pane list": '{"result":{"panes":['
+                         '{"workspace_id":"w1","cwd":"/code/other"},'
+                         '{"workspace_id":"w2","cwd":"/code/repo"}]}}',
+            "tab list": '{"result":{"tabs":['
+                        '{"label":"agents","tab_id":"w2:t7"}]}}',
+        }))
+        assert T.herdr_labeled_tab("agents", "/code/repo") == ("w2:t7", False)
+
+
+class TestWorkspaceForPath:
+    """Pure workspace resolution from `herdr pane list` pane dicts —
+    workspaces carry no cwd in the herdr API, so panes stand in."""
+
+    PANES = [
+        {"workspace_id": "w1", "cwd": "/code/alpha"},
+        {"workspace_id": "w2", "cwd": "/code/beta",
+         "foreground_cwd": "/code/beta/src"},
+    ]
+
+    def test_exact_match(self, T):
+        assert T.workspace_for_path(self.PANES, "/code/beta") == "w2"
+
+    def test_trailing_slash_normalised(self, T):
+        assert T.workspace_for_path(self.PANES, "/code/beta/") == "w2"
+
+    def test_pane_inside_the_repo_matches(self, T):
+        # a pane cd'ed into a subdirectory still identifies the workspace
+        panes = [{"workspace_id": "w3", "cwd": "/code/gamma/lib/deep"}]
+        assert T.workspace_for_path(panes, "/code/gamma") == "w3"
+
+    def test_repo_inside_the_pane_cwd_matches(self, T):
+        # workspace rooted above the repo (e.g. a parent directory)
+        panes = [{"workspace_id": "w4", "cwd": "/code"}]
+        assert T.workspace_for_path(panes, "/code/delta") == "w4"
+
+    def test_foreground_cwd_is_consulted(self, T):
+        assert T.workspace_for_path(self.PANES, "/code/beta/src") == "w2"
+
+    def test_prefix_is_path_aware_not_string_aware(self, T):
+        # /code/alpha must not match /code/alphabet
+        assert T.workspace_for_path(self.PANES, "/code/alphabet") is None
+
+    def test_no_match_returns_none(self, T):
+        assert T.workspace_for_path(self.PANES, "/somewhere/else") is None
+
+    def test_ambiguous_match_returns_none(self, T):
+        panes = [{"workspace_id": "w1", "cwd": "/code/repo"},
+                 {"workspace_id": "w2", "cwd": "/code/repo"}]
+        assert T.workspace_for_path(panes, "/code/repo") is None
+
+    def test_same_workspace_twice_is_not_ambiguous(self, T):
+        panes = [{"workspace_id": "w1", "cwd": "/code/repo"},
+                 {"workspace_id": "w1", "cwd": "/code/repo/sub"}]
+        assert T.workspace_for_path(panes, "/code/repo") == "w1"
+
+    def test_empty_inputs(self, T):
+        assert T.workspace_for_path([], "/code/repo") is None
+        assert T.workspace_for_path(self.PANES, "") is None
+
 
 class TestSpawnFallback:
     """Newer herdr dropped `agent start --cwd/--tab/--split`; spawn must
