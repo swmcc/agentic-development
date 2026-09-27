@@ -6,8 +6,8 @@ Configuration and tooling for agentic development workflows.
 
 ```bash
 # Clone the repo
-git clone git@github.com:swmcc/agentic-development.git ~/Documents/Code/agentic-development
-cd ~/Documents/Code/agentic-development
+git clone git@github.com:swmcc/agentic-development.git ~/Code/agentic-development
+cd ~/Code/agentic-development
 
 # Install everything and configure
 make all
@@ -40,7 +40,7 @@ Herdr is a modern terminal multiplexer with first-class support for AI coding ag
 - Gruvbox and other themes
 
 Workspaces are defined in `herdr/spreader.yaml`, one per project under
-`~/Documents/Code`, each laid out with the same four tabs: `agentic` (Claude Code
+`~/Code`, each laid out with the same four tabs: `agentic` (Claude Code
 + Codex), `git` (lazygit), `obsidian` and `system`. To apply that layout to a
 workspace that already exists, use `herdr-scaffold-workspace` — see
 [herdr/README.md](herdr/README.md).
@@ -62,7 +62,7 @@ applies; `make status` reports which won.
 
 ```bash
 make repos          # show the active list, with ✓/✗ per directory
-make repos-local    # build this machine's list by scanning ~/Documents/Code
+make repos-local    # build this machine's list by scanning ~/Code
 ```
 
 `$HERDR_REPOS` beats both if you need to point at a list somewhere else.
@@ -96,7 +96,7 @@ Audit any repo without changing it:
 
 ```bash
 skills/dependabot-automerge/audit.sh swmcc/second_breakfast
-skills/dependabot-automerge/audit.sh --dir ~/Documents/Code
+skills/dependabot-automerge/audit.sh --dir ~/Code
 ```
 
 ## Thrawn
