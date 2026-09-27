@@ -196,9 +196,18 @@ Config precedence (later wins):
 
 Worker agents run unsandboxed (`--dangerously-skip-permissions` for claude,
 `--dangerously-bypass-approvals-and-sandbox` for codex, whose sandbox can't
-even take the git index lock in a worktree) — safe because each is jailed
-in its own worktree on its own branch; worst case is `thrawn abort`. The trade-off is a hard gate at the other end: **nothing is
-ever pushed automatically.** When integration goes green, thrawn generates a
+even take the git index lock in a worktree). Let's be honest about what the
+worktree buys: it isolates *git state* — each worker sits on its own branch
+in its own checkout, so parallel workers can't trample each other or corrupt
+the repo, and a bad task branch dies cleanly with `thrawn abort`. It is not
+a jail. The process still runs as me, with everything I have: gh
+credentials, `~/.ssh`, dotfiles, the network.
+
+**Accepted risk.** This is a deliberate trade-off, not an oversight: one
+user, one machine, trusted repos only. A worker that went genuinely rogue
+could do anything I can do, and no worktree would stop it. I accept that,
+and I don't point thrawn at code I don't trust. The compensation is a hard
+gate at the other end: **nothing is ever pushed automatically.** When integration goes green, thrawn generates a
 one-time 6-digit code shown only on the status board. Shipping requires
 typing it back:
 
