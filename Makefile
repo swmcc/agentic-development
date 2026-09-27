@@ -18,7 +18,7 @@ LOCAL_REPOS := $(HERDR_CONFIG_DIR)/repos.local.yaml
 LOCAL_CONFIG := $(HERDR_CONFIG_DIR)/config.local.toml
 
 # Directory scanned by `make repos-local`.
-CODE_DIR ?= $(HOME)/Documents/Code
+CODE_DIR ?= $(HOME)/Code
 
 .DEFAULT_GOAL := help
 

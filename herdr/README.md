@@ -36,7 +36,7 @@ won.
 Build a local list by scanning your code directory:
 
 ```bash
-make repos-local                      # scans ~/Documents/Code, writes repos.local.yaml, relinks
+make repos-local                      # scans ~/Code, writes repos.local.yaml, relinks
 make repos-local CODE_DIR=~/work      # scan somewhere else
 make repos                            # show the active list, ✓/✗ per directory
 ```
@@ -44,7 +44,7 @@ make repos                            # show the active list, ✓/✗ per direct
 Or drive the generator directly for finer control:
 
 ```bash
-herdr-gen-spreader --scan ~/Documents/Code --exclude talks,notes \
+herdr-gen-spreader --scan ~/Code --exclude talks,notes \
   -o ~/.config/herdr/repos.local.yaml --force
 
 herdr-gen-spreader --scan ~/work ~/side/one-off   # stdout, extra paths appended
@@ -76,19 +76,19 @@ symlink below. To do it by hand:
 mkdir -p ~/.config/herdr
 
 # Symlink the main config
-ln -sf ~/Documents/Code/agentic-development/herdr/config.toml ~/.config/herdr/config.toml
+ln -sf ~/Code/agentic-development/herdr/config.toml ~/.config/herdr/config.toml
 
 # Symlink spreader config (if using herdr-spreader)
-ln -sf ~/Documents/Code/agentic-development/herdr/spreader.yaml ~/.config/herdr/spreader.yaml
+ln -sf ~/Code/agentic-development/herdr/spreader.yaml ~/.config/herdr/spreader.yaml
 
 # Symlink automation scripts
-ln -sf ~/Documents/Code/agentic-development/herdr/scripts/setup-spaces.sh ~/.config/herdr/setup-spaces.sh
-ln -sf ~/Documents/Code/agentic-development/herdr/scripts/setup-tabs.sh ~/.config/herdr/setup-tabs.sh
+ln -sf ~/Code/agentic-development/herdr/scripts/setup-spaces.sh ~/.config/herdr/setup-spaces.sh
+ln -sf ~/Code/agentic-development/herdr/scripts/setup-tabs.sh ~/.config/herdr/setup-tabs.sh
 
 # Put the scripts on PATH
 mkdir -p ~/.local/bin
-ln -sf ~/Documents/Code/agentic-development/herdr/scripts/scaffold-workspace.sh ~/.local/bin/herdr-scaffold-workspace
-ln -sf ~/Documents/Code/agentic-development/herdr/scripts/gen-spreader.sh ~/.local/bin/herdr-gen-spreader
+ln -sf ~/Code/agentic-development/herdr/scripts/scaffold-workspace.sh ~/.local/bin/herdr-scaffold-workspace
+ln -sf ~/Code/agentic-development/herdr/scripts/gen-spreader.sh ~/.local/bin/herdr-gen-spreader
 ```
 
 Symlink `config.local.toml` / `repos.local.yaml` instead of the repo copies where
@@ -101,11 +101,11 @@ The hooks in `hooks/` are typically installed by Herdr itself when you enable in
 ```bash
 # Claude Code hook
 mkdir -p ~/.claude/hooks
-ln -sf ~/Documents/Code/agentic-development/herdr/hooks/claude-agent-state.sh ~/.claude/hooks/herdr-agent-state.sh
+ln -sf ~/Code/agentic-development/herdr/hooks/claude-agent-state.sh ~/.claude/hooks/herdr-agent-state.sh
 
 # Codex hook
 mkdir -p ~/.codex
-ln -sf ~/Documents/Code/agentic-development/herdr/hooks/codex-agent-state.sh ~/.codex/herdr-agent-state.sh
+ln -sf ~/Code/agentic-development/herdr/hooks/codex-agent-state.sh ~/.codex/herdr-agent-state.sh
 ```
 
 ## Configuration Overview
@@ -130,7 +130,7 @@ Defines one workspace per project, each with the same four tabs:
 | `obsidian` | Plain shell |
 | `system` | Plain shell |
 
-Roots live under `~/Documents/Code`.
+Roots live under `~/Code`.
 
 ## Usage
 
@@ -153,7 +153,7 @@ It must be run from inside a herdr pane (`HERDR_ENV=1`):
 
 ```bash
 # Create a workspace for a directory and lay it out in one step
-herdr-scaffold-workspace --cwd ~/Documents/Code/some-project
+herdr-scaffold-workspace --cwd ~/Code/some-project
 
 # Apply the layout to a workspace that already exists
 herdr-scaffold-workspace --workspace w7
@@ -188,7 +188,7 @@ for this machine's. Each workspace follows this structure:
 
 ```yaml
 - name: project-name
-  root: ~/Documents/Code/project-directory
+  root: ~/Code/project-directory
   tabs:
     - label: agentic
       panes:

@@ -10,7 +10,7 @@
 
 workspaces:
   - name: second_breakfast
-    root: ~/Documents/Code/second_breakfast
+    root: ~/Code/second_breakfast
     tabs:
       - label: agentic
         panes:
@@ -27,7 +27,7 @@ workspaces:
           - command: zsh
 
   - name: the-mcculloughs.org
-    root: ~/Documents/Code/the-mcculloughs.org
+    root: ~/Code/the-mcculloughs.org
     tabs:
       - label: agentic
         panes:
@@ -44,7 +44,7 @@ workspaces:
           - command: zsh
 
   - name: swmcc.github.io
-    root: ~/Documents/Code/swmcc.github.io
+    root: ~/Code/swmcc.github.io
     tabs:
       - label: agentic
         panes:
@@ -61,7 +61,7 @@ workspaces:
           - command: zsh
 
   - name: thoughts
-    root: ~/Documents/Code/thoughts
+    root: ~/Code/thoughts
     tabs:
       - label: agentic
         panes:
@@ -78,7 +78,7 @@ workspaces:
           - command: zsh
 
   - name: experiments.swm.cc
-    root: ~/Documents/Code/experiments.swm.cc
+    root: ~/Code/experiments.swm.cc
     tabs:
       - label: agentic
         panes:
@@ -95,7 +95,7 @@ workspaces:
           - command: zsh
 
   - name: agentic-development
-    root: ~/Documents/Code/agentic-development
+    root: ~/Code/agentic-development
     tabs:
       - label: agentic
         panes:
@@ -112,7 +112,7 @@ workspaces:
           - command: zsh
 
   - name: searchforaproperty.com
-    root: ~/Documents/Code/searchforaproperty.com
+    root: ~/Code/searchforaproperty.com
     tabs:
       - label: agentic
         panes:
@@ -129,7 +129,7 @@ workspaces:
           - command: zsh
 
   - name: funeralsni
-    root: ~/Documents/Code/funeralsni
+    root: ~/Code/funeralsni
     tabs:
       - label: agentic
         panes:
@@ -146,7 +146,7 @@ workspaces:
           - command: zsh
 
   - name: jotter
-    root: ~/Documents/Code/jotter
+    root: ~/Code/jotter
     tabs:
       - label: agentic
         panes:

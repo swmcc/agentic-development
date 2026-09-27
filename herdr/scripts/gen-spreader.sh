@@ -5,13 +5,13 @@
 # Its main use is building a machine-local list of repos that should never be
 # committed to this repo:
 #
-#   herdr-gen-spreader --scan ~/Documents/Code -o ~/.config/herdr/repos.local.yaml
+#   herdr-gen-spreader --scan ~/Code -o ~/.config/herdr/repos.local.yaml
 #
 # Usage:
 #   gen-spreader.sh [--scan DIR] [--exclude a,b,c] [-o FILE] [--force] [PATH ...]
 #
 #   --scan DIR     add every immediate subdirectory of DIR. Defaults to
-#                  ~/Documents/Code when no --scan and no PATHs are given.
+#                  ~/Code when no --scan and no PATHs are given.
 #   --exclude CSV  basenames to leave out (repeatable, comma-separated)
 #   -o FILE        write to FILE instead of stdout; refuses to overwrite an
 #                  existing file unless --force is passed
@@ -47,7 +47,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$SCAN" ] && [ "${#PATHS[@]}" -eq 0 ]; then
-  SCAN="$HOME/Documents/Code"
+  SCAN="$HOME/Code"
 fi
 
 excluded() {
@@ -80,7 +80,7 @@ fi
 for p in "${PATHS[@]:-}"; do
   [ -n "$p" ] || continue
   p="${p/#\~/$HOME}"
-  # Normalise so ~/Documents/Code/foo and ~/Documents/Code/foo/ dedupe together.
+  # Normalise so ~/Code/foo and ~/Code/foo/ dedupe together.
   [ -d "$p" ] && p="$(cd "$p" && pwd)"
   excluded "$(basename "$p")" && continue
   add_root "$p"
