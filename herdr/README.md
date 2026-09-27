@@ -59,6 +59,28 @@ a silent fallback, so a typo can't quietly hand you the wrong repos.
 `make unlink` leaves both local files alone — they're yours, and nothing in the
 repo can reconstruct their contents.
 
+## Upgrading herdr
+
+`herdr update` downloads and installs the latest binary — safe on its own,
+nothing restarts. The server (and every pane on it) is the part that needs
+care:
+
+1. Wait for a quiet moment — check `herdr agent list` for anything mid-task.
+2. `herdr update` to fetch the new binary.
+3. Restart the server. Try `herdr update --handoff` first (live handoff —
+   panes survive if it works). The reliable fallback: `herdr server stop`,
+   then launch `herdr` again. The layout restores from the saved session,
+   and with the Claude integration ≥ v6 each Claude pane is relaunched
+   with `--resume <session-id>`, so conversations come back intact
+   (`[session] resume_agents_on_restore` must be enabled). The pane you
+   run the restart from dies with the server — reattach from a fresh
+   terminal.
+4. Refresh the integration hooks (they version with herdr):
+   `herdr integration install claude` and `herdr integration install codex`.
+5. `herdr --version` to confirm, and commit the rewritten hook files if
+   this machine hosts the repo checkout — herdr writes them through the
+   symlinks.
+
 ## Notifications
 
 Blocked/done agent alerts go to a phone via [ntfy](https://ntfy.sh), routed by
