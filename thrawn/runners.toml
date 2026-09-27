@@ -56,7 +56,7 @@ notes = "strongest executor; architectural work, tricky refactors, anything touc
 
 [runners.haiku]
 argv = ["claude", "--model", "haiku", "-p", "{prompt}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
-notes = "fast + cheap; mechanical edits, templates, config changes, docs, small well-specified functions"
+notes = "fast + cheap; mechanical edits, templates, config changes, docs, small well-specified functions. Same-pool Claude baseline for the runner trial (issue #14) — draws the shared Claude allowance"
 
 [runners.codex]
 # Do NOT pass --full-auto alongside --dangerously-bypass-approvals-and-sandbox:
@@ -71,7 +71,7 @@ notes = "fast + cheap; mechanical edits, templates, config changes, docs, small 
 # `--sandbox danger-full-access` is the modern spelling of the same thing if
 # this flag is ever deprecated. Isolation comes from the worktree, not codex.
 argv = ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "{prompt}"]
-notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-described scope"
+notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-described scope. PREFER for focused, narrowly-scoped codegen during the runner trial (issue #14) — draws ChatGPT quota, sparing the Claude pool"
 
 [runners.pi]
 # ChatGPT Plus/Pro subscription via pi's openai-codex provider (default model
@@ -82,7 +82,7 @@ notes = "OpenAI Codex CLI; strong at focused code generation in a narrow, well-d
 # --session are issue #13). pi has no sandbox: isolation comes from the
 # worktree, and committing from a linked worktree works (verified).
 argv = ["pi", "--provider", "openai-codex", "--no-session", "--mode", "json", "-p", "{prompt}"]
-notes = "GPT via ChatGPT subscription (separate quota pool from the claude runners); low/medium mechanical tasks, well-specified edits, config changes, docs"
+notes = "GPT via ChatGPT subscription (separate quota pool from the claude runners); low/medium mechanical tasks, well-specified edits, config changes, docs. PREFER for mechanical, well-specified tasks during the runner trial (issue #14) — draws ChatGPT quota, sparing the Claude pool"
 
 [runners.local]
 argv = ["ollama", "run", "qwen2.5-coder", "{prompt}"]
