@@ -6,7 +6,7 @@ My [Herdr](https://herdr.io) terminal multiplexer configuration for agentic deve
 
 | File | Purpose |
 |------|---------|
-| `config.toml` | Keybindings, UI settings, theme (gruvbox) — the personal defaults |
+| `config.toml` | Keybindings, UI settings, theme (vesper) — the personal defaults |
 | `spreader.yaml` | Workspace definitions for herdr-spreader — the personal repo list |
 | `scripts/resolve-repos.sh` | Work out which repo list is in effect, and print it |
 | `scripts/gen-spreader.sh` | Generate a repo list by scanning a directory |
@@ -113,11 +113,14 @@ ln -sf ~/Code/agentic-development/herdr/hooks/codex-agent-state.sh ~/.codex/herd
 ### Keybindings (`config.toml`)
 
 - **Prefix**: `Ctrl+a` (like tmux/screen)
+- **`prefix+f`**: Goto (jump between workspaces)
 - **`prefix+g`**: Open lazygit in a popup (80% width/height)
+- **`prefix+t`**: Create a new workspace with the standard tabs (prompts for label and path)
+- **`prefix+o`**: Capture a thought into today's Obsidian daily note
 
 ### Theme
 
-Using **gruvbox** with `auto_switch = false`.
+Using **vesper** with `auto_switch = false`.
 
 ### Workspaces (`spreader.yaml`)
 
