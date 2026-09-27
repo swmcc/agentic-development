@@ -5,14 +5,16 @@
 # `notes` are shown to the planner so it can route tasks sensibly.
 
 [thrawn]
-planner = "fable-plan"        # deep-think model (read-only exploration)
+planner = "opus-plan"         # deep-think model (read-only exploration); fable-plan
+                              # costs Mythos-tier quota — override per-repo in
+                              # .thrawn.toml only for genuinely architectural tickets
 integrator = "opus"           # merges conflicts, fixes failing checks
 default_runner = "opus"       # fallback when the planner picks something odd
 allowed_runners = ["opus", "haiku", "codex", "local", "pi"]
 max_tasks = 6
 integrator_attempts = 2
 poll_seconds = 2
-recon_runner = ""             # empty = use the planner runner
+recon_runner = "haiku"        # recon is survey work; never spend planner quota on it
 recon_max_age_commits = 50    # staleness threshold for the cached repo brief
 auto_recon = true             # dispatch runs recon first when no cache exists
 auto_fix = false              # ask before dispatching integrator agents (no silent fixing)
@@ -42,9 +44,13 @@ setup = ""
 
 # --- planner (read-only, never edits) --------------------------------------
 
+[runners.opus-plan]
+argv = ["claude", "--model", "opus", "--permission-mode", "plan", "-p", "{prompt}"]
+notes = "internal — planning only (default)"
+
 [runners.fable-plan]
 argv = ["claude", "--model", "claude-fable-5", "--permission-mode", "plan", "-p", "{prompt}"]
-notes = "internal — planning only"
+notes = "internal — planning only; Mythos-tier quota, reserve for hard tickets (planner = \"fable-plan\" in .thrawn.toml)"
 
 # --- workers ---------------------------------------------------------------
 

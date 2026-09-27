@@ -6,7 +6,7 @@
 
 Give thrawn a ticket or a markdown brief. It:
 
-1. **Deep-thinks** a plan with a strong model (fable) that explores your repo read-only
+1. **Deep-thinks** a plan with a strong model (opus by default; fable one override away) that explores your repo read-only
 2. **Splits** the work into parallel tasks, each routed to the right agent/model for its complexity
 3. **Spawns** one agent per task in an isolated git worktree — visible as herdr panes
 4. **Merges** the task branches, resolves conflicts with an integrator agent, runs your checks
@@ -17,7 +17,7 @@ Give thrawn a ticket or a markdown brief. It:
 thrawn 123
         │
         ▼
-   ┌─ deep think (fable, read-only) ──→ plan.json
+   ┌─ deep think (opus, read-only) ──→ plan.json
    │
    ▼
    ┌──────────┬──────────┬──────────┐        herdr panes,
@@ -150,7 +150,7 @@ own tab and pane are left alone. Issue ids can be GitHub/GitLab
 numbers (fetched like normal dispatch), `.md` briefs, or opaque keys like
 `COS-2101` — anything thrawn can't fetch is passed to the agent as-is.
 
-What swarm deliberately does **not** do: no fable planning, no task
+What swarm deliberately does **not** do: no deep-think planning, no task
 decomposition, no integrator agents, no automatic merging, no ship flow.
 The board still works — `thrawn status` shows per-issue progress (agents
 that exit 0 without committing are flagged, same as orchestrated runs),
@@ -179,7 +179,8 @@ The planner routes each task by complexity. Defaults in
 
 | Runner | Command | Used for |
 |--------|---------|----------|
-| `fable-plan` | `claude --model claude-fable-5 --permission-mode plan` | planning only (read-only) |
+| `opus-plan` | `claude --model opus --permission-mode plan` | planning only (read-only, default) |
+| `fable-plan` | `claude --model claude-fable-5 --permission-mode plan` | planning for hard tickets — Mythos quota, per-repo opt-in |
 | `opus` | `claude --model opus` | high-complexity, architectural |
 | `haiku` | `claude --model haiku` | mechanical, well-specified |
 | `codex` | `codex exec --full-auto --dangerously-bypass-approvals-and-sandbox` | focused codegen |
