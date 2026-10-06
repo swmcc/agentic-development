@@ -2,6 +2,7 @@ onboarding = false
 [keys]
 prefix = "ctrl+a"
 goto = "prefix+f"
+switch_workspace = "prefix+shift+1..9"
 
 [ui.toast]
 delivery = "system"
@@ -48,6 +49,26 @@ command = "exec bash -c 'read -rp \"Ticket: \" k; [ -n \"$k\" ] || exit 0; jira-
 description = "show a jira ticket"
 width = "85%"
 height = "85%"
+
+# Bring every repo in ~/Documents/Code/repos.list up to the latest main. Opens a
+# pane rather than a popup because the summary table is the point — it lists what
+# moved, what was stashed and restored, and anything that needs a hand. The pane
+# holds on a keypress so the summary survives the command exiting.
+[[keys.command]]
+key = "prefix+u"
+type = "pane"
+command = "exec bash -c '\"$HOME/Documents/Code/update-repos.sh\"; echo; read -rsn1 -p \"── any key to close ──\"'"
+description = "update workspace repos to latest main"
+
+# Review the current branch against my own code-review standards before raising
+# the MR. Costs a headless claude round trip, so it is a keypress rather than a
+# hook — the pre-push nudge is the free tier, this is the real pass. Advisory:
+# it cannot block a push or a merge.
+[[keys.command]]
+key = "prefix+m"
+type = "pane"
+command = "exec bash -c 'premr; echo; read -rsn1 -p \"── any key to close ──\"'"
+description = "review this branch against my review standards"
 
 # The state of the whole world on one keypress: what is blocked on your review,
 # what you have in flight, which repos are not where you left them. Collection
