@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# C2 — one view of the state of your world.
+#
+#   c2                  the board, refreshing whatever has gone stale
+#   c2 board --no-wait  the board from cache, refresh in the background
+#   c2 refresh [src...] force a refresh (default: every shell collector)
+#   c2 state [src]      dump the fused state as JSON, for a skill to read
+#   c2 doctor           check credentials and dependencies
+#
+# Collection is shell, not agent. A headless agent round trip costs 20-30s per
+# source, which is fine for a slash command and useless for a keypress — the
+# same conclusion jira-show.sh reached. Claude's job is to reason over `c2
+# state`, not to fetch it.
+set -uo pipefail
+
+# Resolve through symlinks: this is installed as ~/.local/bin/c2, and
+# BASH_SOURCE there is the link, whose directory holds none of the collectors.
+# `readlink -f` is not portable far enough back on macOS to rely on.
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  target="$(readlink "$self")"
+  case "$target" in
+    /*) self="$target" ;;
+     *) self="$(dirname "$self")/$target" ;;
+  esac
+done
+C2_ROOT="$(cd "$(dirname "$self")/.." && pwd)"
+export C2_ROOT
+. "$C2_ROOT/lib/c2.sh"
+
+# Per-source freshness budgets, in seconds. Repos are local and nearly free, so
+# they are almost always re-read; mail and rovo come from a Claude session and
+# cannot be refreshed from here at all.
+declare -a SHELL_SOURCES=(repos jira mrs)
+ttl_for() {
+  case "$1" in
+    repos) echo 45 ;;
+    jira)  echo 180 ;;
+    mrs)   echo 180 ;;
+    *)     echo 600 ;;
+  esac
+}
+
+refresh() {
+  local -a want=("$@")
+  [ ${#want[@]} -gt 0 ] || want=("${SHELL_SOURCES[@]}")
+  local s
+  for s in "${want[@]}"; do
+    [ -f "$C2_ROOT/collectors/$s.sh" ] || { echo "no collector for '$s'" >&2; continue; }
+    bash "$C2_ROOT/collectors/$s.sh" &
+  done
+  wait
+}
+
+refresh_stale() {
+  local -a want=()
+  local s
+  for s in "${SHELL_SOURCES[@]}"; do
+    c2_stale "$s" "$(ttl_for "$s")" && want+=("$s")
+  done
+  [ ${#want[@]} -gt 0 ] && refresh "${want[@]}"
+  return 0
+}
+
+doctor() {
+  local ok=0
+  chk() { # chk <label> <condition-output>
+    if [ -n "$2" ]; then printf '  \033[32m✓\033[0m %-22s %s\n' "$1" "$2"
+    else printf '  \033[31m✗\033[0m %-22s %s\n' "$1" "missing"; ok=1; fi
+  }
+  echo "C2 doctor"
+  chk "glab"        "$(command -v glab >/dev/null 2>&1 && glab auth status 2>&1 | grep -o 'Logged in to [^ ]* as [^ ]*' | head -1)"
+  chk "jira token"  "$(c2_jira_token >/dev/null 2>&1 && echo "in Keychain for $JIRA_EMAIL")"
+  chk "workspace"   "$( [ -d "$(c2_workspace)" ] && c2_workspace )"
+  chk "python3"     "$(python3 --version 2>&1)"
+  chk "jq"          "$(command -v jq >/dev/null 2>&1 && jq --version)"
+  echo
+  echo "State:"
+  local s f
+  for s in repos jira mrs calendar mail rovo; do
+    f="$C2_STATE/$s.json"
+    if [ -f "$f" ]; then
+      python3 - "$f" "$s" <<'PY'
+import datetime as dt, json, sys
+f, name = sys.argv[1], sys.argv[2]
+try:
+    e = json.load(open(f))
+    at = dt.datetime.strptime(e["collected_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+    age = int((dt.datetime.now(dt.timezone.utc) - at).total_seconds())
+    mark = "\033[32m✓\033[0m" if e.get("ok") else "\033[31m✗\033[0m"
+    note = "" if e.get("ok") else f"  — {e.get('error')}"
+    print(f"  {mark} {name:<10} {age//60}m {age%60}s old{note}")
+except Exception as exc:
+    print(f"  \033[31m✗\033[0m {name:<10} unreadable: {exc}")
+PY
+    else
+      printf '  \033[2m·\033[0m %-10s never collected\n' "$s"
+    fi
+  done
+  return $ok
+}
+
+cmd="${1:-board}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+  board)
+    if [ "${1:-}" = "--no-wait" ]; then
+      # Paint instantly from cache, then warm it for the next keypress.
+      ( refresh_stale >/dev/null 2>&1 & ) &
+    else
+      refresh_stale
+    fi
+    python3 "$C2_ROOT/render/board.py" "$C2_STATE"
+    ;;
+  refresh) refresh "$@" && python3 "$C2_ROOT/render/board.py" "$C2_STATE" ;;
+  state)
+    if [ -n "${1:-}" ]; then
+      cat "$C2_STATE/$1.json" 2>/dev/null || { echo "{}"; exit 1; }
+    else
+      python3 - "$C2_STATE" <<'PY'
+import glob, json, os, sys
+out = {}
+for p in sorted(glob.glob(os.path.join(sys.argv[1], "*.json"))):
+    try:
+        e = json.load(open(p))
+        out[e.get("source") or os.path.basename(p)[:-5]] = e
+    except Exception:
+        pass
+print(json.dumps(out, indent=1))
+PY
+    fi
+    ;;
+  doctor) doctor ;;
+  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

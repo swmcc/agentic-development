@@ -9,3 +9,6 @@ __pycache__/
 .pytest-tmp/
 .pytest_cache/
 plan.md
+
+# C2 collects live state into here; none of it belongs in git.
+c2/state/

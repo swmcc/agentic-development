@@ -33,7 +33,7 @@ all: install setup ## Install everything and configure
 install: install-herdr install-spreader install-lazygit ## Install all dependencies
 
 .PHONY: setup
-setup: setup-config setup-hooks setup-skills setup-souls setup-workspaces setup-thrawn ## Configure herdr with this repo's settings
+setup: setup-config setup-hooks setup-skills setup-souls setup-workspaces setup-thrawn setup-c2 ## Configure herdr with this repo's settings
 
 # ============================================================================
 # 📦 Installation
@@ -200,6 +200,15 @@ setup-thrawn: ## Install the thrawn orchestrator CLI
 		*":$(HOME)/.local/bin:"*) ;; \
 		*) echo "$(RED)~/.local/bin is not on your PATH — add it to your shell rc$(RESET)" ;; \
 	esac
+
+.PHONY: setup-c2
+setup-c2: ## Install the C2 command centre CLI
+	@echo "$(GREEN)Setting up C2...$(RESET)"
+	@mkdir -p $(HOME)/.local/bin
+	@chmod +x $(REPO_DIR)/c2/bin/c2 $(REPO_DIR)/c2/collectors/*.sh $(REPO_DIR)/c2/render/*.py
+	@ln -sf $(REPO_DIR)/c2/bin/c2 $(HOME)/.local/bin/c2
+	@echo "  $(YELLOW)~/.local/bin/c2$(RESET)  — also bound to prefix+c in herdr"
+	@$(REPO_DIR)/c2/bin/c2 doctor || true
 
 # ============================================================================
 # 🧪 Testing

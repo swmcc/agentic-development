@@ -49,6 +49,21 @@ description = "show a jira ticket"
 width = "85%"
 height = "85%"
 
+# The state of the whole world on one keypress: what is blocked on your review,
+# what you have in flight, which repos are not where you left them. Collection
+# is pure shell — Jira over REST, GitLab over glab, git locally — so it answers
+# in under a second where an agent round trip would take half a minute. A popup
+# rather than a pane because it is a glance, not a session.
+#
+# Shift because plain prefix+c is a herdr built-in.
+[[keys.command]]
+key = "prefix+shift+c"
+type = "popup"
+command = "exec bash -c '\"$HOME/Documents/Code/agentic-development/c2/bin/c2\" board; echo; read -rsn1 -p \"── any key to close ──\"'"
+description = "command centre — what is waiting on you right now"
+width = "90%"
+height = "80%"
+
 [theme]
 name = "vesper"
 auto_switch = false

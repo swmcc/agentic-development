@@ -24,6 +24,7 @@ make status
 
 | Path | Purpose |
 |------|---------|
+| `c2/` | 🛰 Command centre — one view of what is waiting on you, bound to `prefix+shift+c` |
 | `herdr/` | [Herdr](https://herdr.dev) terminal multiplexer configuration |
 | `skills/` | Claude Code skills, symlinked into `~/.claude/skills` |
 | `souls/` | 🎭 Character roster for agents — one file per persona, consumed by thrawn, `~/.claude/agents` wrappers and `/soul` |
@@ -92,6 +93,7 @@ symlinks them into `~/.claude/skills`.
 | Skill | Purpose |
 |-------|---------|
 | `dependabot-automerge` | Set up, audit, or fix Dependabot auto-merge so patch/minor merge only after tests pass and majors never do |
+| `sitrep` | Read the command centre and say what actually needs you — the judgement layer over `c2` |
 
 Audit any repo without changing it:
 
@@ -99,6 +101,23 @@ Audit any repo without changing it:
 skills/dependabot-automerge/audit.sh swmcc/second_breakfast
 skills/dependabot-automerge/audit.sh --dir ~/Code
 ```
+
+## C2
+
+One keypress for the state of your world — what is blocked on your review, what
+you have in flight, which repos are not where you left them:
+
+```bash
+c2            # the board (prefix+shift+c in herdR)
+c2 state      # the fused state as JSON, for a skill to reason over
+c2 doctor     # credentials, dependencies, and how old each source is
+```
+
+Collection is shell, not agent: Jira over REST, GitLab over `glab`, git locally,
+so the whole board refreshes in well under a second. Calendar and Gmail have no
+CLI and are collected by `/sitrep`, which also does the reasoning.
+
+See [c2/README.md](c2/README.md).
 
 ## Thrawn
 
