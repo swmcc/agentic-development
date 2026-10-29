@@ -1,0 +1,225 @@
+<title>Mr. Sweep</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a single reading column. Summary first, then what needs you, then every sweep newest first as a ledger of rows. */
+:root {
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --fg: #1c2127;
+  --muted: #5c6670;
+  --line: #dde1e5;
+  --accent: #0e6e73;
+  --ok: #1e7a3c;
+  --ok-bg: #e3f3e8;
+  --warn: #9a5b00;
+  --warn-bg: #fbefd9;
+  --bad: #b3261e;
+  --bad-bg: #fbe5e3;
+  --chip-bg: #eceff2;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12161a; --surface: #1a1f24; --fg: #e3e7ea; --muted: #9aa4ad; --line: #2c333a;
+    --accent: #5cc3c8; --ok: #7fd49a; --ok-bg: #1b3325; --warn: #f0b55c; --warn-bg: #3a2c14;
+    --bad: #f28b82; --bad-bg: #3d1e1c; --chip-bg: #252b31; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12161a; --surface: #1a1f24; --fg: #e3e7ea; --muted: #9aa4ad; --line: #2c333a;
+  --accent: #5cc3c8; --ok: #7fd49a; --ok-bg: #1b3325; --warn: #f0b55c; --warn-bg: #3a2c14;
+  --bad: #f28b82; --bad-bg: #3d1e1c; --chip-bg: #252b31; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 920px; margin: 0 auto; display: grid; gap: 28px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+h1 { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+h1 span { color: var(--accent); font-family: var(--mono); font-weight: 500; font-size: 0.8em; margin-left: 6px; }
+.tagline { margin: 2px 0 0; color: var(--muted); font-style: italic; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin: 0 0 10px; }
+.meta { color: var(--muted); font-size: 13px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover, a:focus-visible { text-decoration: underline; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.stat b { display: block; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 13px; }
+@media (max-width: 560px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.sweep { display: grid; gap: 6px; }
+.sweep-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.sweep-head time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.args { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.rows { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 14px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: start; }
+.row:first-child { border-top: 0; }
+.ref { font-family: var(--mono); font-size: 13px; }
+.title { min-width: 0; }
+.title .t { display: block; overflow-wrap: anywhere; }
+.title .sub { display: block; color: var(--muted); font-size: 13px; }
+.title .url { display: block; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+.args { overflow-wrap: anywhere; min-width: 0; }
+.state { text-align: right; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.state.failed { color: var(--bad); font-weight: 500; }
+@media (max-width: 560px) {
+  .row { grid-template-columns: 1fr; }
+  .state { text-align: left; white-space: normal; }
+}
+.pill { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; background: var(--chip-bg); color: var(--muted); }
+.pill.APPROVE { background: var(--ok-bg); color: var(--ok); }
+.pill.CHANGES { background: var(--warn-bg); color: var(--warn); }
+.extra { color: var(--muted); font-size: 13px; padding: 8px 14px; border-top: 1px dashed var(--line); }
+.extra code { font-family: var(--mono); font-size: 12px; }
+
+.needs .rows { border-color: var(--bad); }
+.empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 8px; padding: 20px; color: var(--muted); }
+.empty code { font-family: var(--mono); color: var(--fg); }
+@media (prefers-reduced-motion: no-preference) { .rows { transition: border-color .2s; } }
+</style>
+
+<main>
+  <header>
+    <div>
+      <h1>🧑‍🌾 Mr. Sweep <span>#collective-mrs</span></h1>
+      <p class="tagline">Collie rounds them up. Mr. Sweep sees them through.</p>
+    </div>
+    <div class="meta" id="last">Waiting for the first sweep</div>
+  </header>
+
+  <section aria-labelledby="today-h">
+    <h2 id="today-h">Today</h2>
+    <div class="stats">
+      <div class="stat"><b id="s-reviewed">0</b><span>reviewed</span></div>
+      <div class="stat"><b id="s-approved">0</b><span>approved</span></div>
+      <div class="stat"><b id="s-changes">0</b><span>changes requested</span></div>
+      <div class="stat"><b id="s-failed">0</b><span>not posted</span></div>
+    </div>
+  </section>
+
+  <section class="needs" id="needs" hidden aria-labelledby="needs-h">
+    <h2 id="needs-h">Needs you</h2>
+    <div class="rows" id="needs-rows"></div>
+  </section>
+
+  <section aria-labelledby="log-h">
+    <h2 id="log-h">Sweeps</h2>
+    <div id="log">
+      <div class="empty">Each run of <code>/mr-sweep</code> lands here: the MRs it reviewed, the verdict it posted, and anything it couldn't post. Nothing has run yet.</div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+const fmtTime = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return iso || '';
+  const today = new Date().toDateString() === d.toDateString();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return today ? `Today ${time}` : `${d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} ${time}`;
+};
+
+// Every link opens the merge request in a new tab.
+function mrLink(text, href, cls) {
+  const a = el('a', cls, text);
+  a.href = href; a.target = '_blank'; a.rel = 'noopener';
+  return a;
+}
+
+// Arguments as typed; any MR link among them is clickable.
+function argsLine(args) {
+  const line = el('span', 'args');
+  line.append(document.createTextNode('/mr-sweep'));
+  for (const word of (args || '').split(/\s+/).filter(Boolean)) {
+    line.append(document.createTextNode(' '), word.startsWith('https://') ? mrLink(word, word) : document.createTextNode(word));
+  }
+  return line;
+}
+
+const STATUS = { posted: 'posted', not_posted: 'not posted', draft_only: 'draft only' };
+
+function reviewRow(r) {
+  const row = el('div', 'row');
+  const left = el('div');
+  left.append(el('span', `pill ${r.verdict || ''}`, r.verdict || '—'));
+  const mid = el('div', 'title');
+  const top = el('span', 't');
+  top.append(mrLink(`${r.repo}!${r.iid}`, r.url, 'ref'), document.createTextNode(' '), mrLink(r.title || 'Open merge request', r.url));
+  const bits = [r.author && `by ${r.author}`, r.comments != null && `${r.comments} comment${r.comments === 1 ? '' : 's'}`].filter(Boolean);
+  mid.append(top, el('span', 'sub', bits.join(' · ')), mrLink(r.url, r.url, 'url'));
+  const failed = r.status === 'not_posted';
+  const state = el('div', `state${failed ? ' failed' : ''}`, STATUS[r.status] || r.status || '');
+  if (failed && r.note) state.title = r.note;
+  row.append(left, mid, state);
+  if (failed && r.note) mid.append(el('span', 'sub', r.note));
+  return row;
+}
+
+function render(sweeps) {
+  const log = $('log');
+  if (!sweeps.length) return;
+  log.replaceChildren();
+  $('last').textContent = `Last sweep ${fmtTime(sweeps[0].at)}`;
+
+  const todayStr = new Date().toDateString();
+  const today = sweeps.filter((s) => new Date(s.at).toDateString() === todayStr).flatMap((s) => s.reviews || []);
+  $('s-reviewed').textContent = today.length;
+  $('s-approved').textContent = today.filter((r) => r.status === 'posted' && r.verdict === 'APPROVE').length;
+  $('s-changes').textContent = today.filter((r) => r.status === 'posted' && r.verdict === 'CHANGES').length;
+
+  // A failed post stays a draft that shows as P in collie until someone posts it.
+  const failed = sweeps.flatMap((s) => (s.reviews || []).filter((r) => r.status === 'not_posted'));
+  const seen = new Set();
+  const open = failed.filter((r) => !seen.has(r.url) && seen.add(r.url));
+  $('s-failed').textContent = today.filter((r) => r.status === 'not_posted').length;
+  $('needs').hidden = open.length === 0;
+  $('needs-rows').replaceChildren(...open.map(reviewRow));
+
+  for (const s of sweeps) {
+    const block = el('article', 'sweep');
+    const head = el('div', 'sweep-head');
+    const t = el('time', null, fmtTime(s.at)); t.dateTime = s.at;
+    head.append(t, argsLine(s.args));
+    const rows = el('div', 'rows');
+    const reviews = s.reviews || [];
+    if (!reviews.length) rows.append(el('div', 'extra', 'Nothing new worth reviewing.'));
+    reviews.forEach((r) => rows.append(reviewRow(r)));
+    if (s.over_cap && s.over_cap.length) {
+      const x = el('div', 'extra');
+      x.append(document.createTextNode('Over the cap, next run: '));
+      s.over_cap.forEach((o, i) => {
+        const a = mrLink(`${o.repo}!${o.iid}`, o.url);
+        x.append(...(i ? [document.createTextNode(', '), a] : [a]));
+      });
+      rows.append(x);
+    }
+    if (s.skipped && Object.keys(s.skipped).length) {
+      const parts = Object.entries(s.skipped).map(([why, n]) => `${n} ${why}`);
+      rows.append(el('div', 'extra', `Skipped: ${parts.join(' · ')}`));
+    }
+    block.append(head, rows);
+    log.append(block);
+  }
+}
+
+(async () => {
+  const db = await window.claude?.use?.('db');
+  if (!db) return;
+  db.collection('sweeps').orderBy('at', 'desc').limit(60).onSnapshot(
+    (snap) => render(snap.docs.map((d) => d.data())),
+    () => {}
+  );
+})();
+</script>
