@@ -13,6 +13,7 @@ My [Herdr](https://herdr.dev) terminal multiplexer configuration for agentic dev
 | `scripts/scaffold-workspace.sh` | Apply the standard tab layout to a live workspace |
 | `scripts/setup-tabs.sh` | Tab creation helper script |
 | `scripts/jira-show.sh` | Render a Jira ticket as markdown — backs the `prefix+j` popup |
+| `scripts/ticket-pane.sh` | Open a ticket in a pane of its own, on a worktree — backs `prefix+shift+t` |
 | `hooks/claude-agent-state.sh` | Claude Code integration hook |
 | `hooks/codex-agent-state.sh` | Codex integration hook |
 
@@ -130,6 +131,7 @@ mkdir -p ~/.local/bin
 ln -sf ~/Code/agentic-development/herdr/scripts/scaffold-workspace.sh ~/.local/bin/herdr-scaffold-workspace
 ln -sf ~/Code/agentic-development/herdr/scripts/gen-spreader.sh ~/.local/bin/herdr-gen-spreader
 ln -sf ~/Code/agentic-development/herdr/scripts/jira-show.sh ~/.local/bin/jira-show
+ln -sf ~/Code/agentic-development/herdr/scripts/ticket-pane.sh ~/.local/bin/herdr-ticket
 ```
 
 Symlink `config.local.toml` / `repos.local.yaml` instead of the repo copies where
@@ -159,6 +161,7 @@ ln -sf ~/Code/agentic-development/herdr/hooks/codex-agent-state.sh ~/.codex/herd
 - **`prefix+t`**: Create a new workspace with the standard tabs (prompts for label and path)
 - **`prefix+o`**: Capture a thought into today's Obsidian daily note
 - **`prefix+j`**: Read a Jira ticket in a popup — see [Jira ticket viewer](#jira-ticket-viewer)
+- **`prefix+shift+t`**: Open a ticket in a pane of its own — see [A pane per ticket](#a-pane-per-ticket)
 
 ### Jira ticket viewer
 
@@ -190,6 +193,46 @@ Requires `glow` (already a dependency of the standard layout via `bat`/`glow`), 
 and `python3`. The description is Atlassian Document Format, converted to markdown by an
 embedded renderer covering headings, marks, links, nested lists, fenced code, blockquotes,
 rules, panels and tables.
+
+### A pane per ticket
+
+`prefix+shift+t` asks for a ticket, offers a branch name for editing, and opens
+that ticket in a tab of its own, labelled with the key — in the repo's own
+workspace, not a new one.
+
+The pane stands in `<repo>/.claude/worktrees/<ticket>`, the same place Claude
+Code puts its own worktrees. That is the whole point of the thing. `collie` can
+open a pane per *review* in a shared checkout because a review only reads; two
+tickets in one checkout would fight over `HEAD` the moment either branched.
+The tab sits in the repo's workspace and stands in the worktree, so the ticket
+stays where you expect it while the work does not collide.
+
+```bash
+herdr-ticket 123                        # repo taken from the pane you are in
+herdr-ticket ABC-123 --repo frontend --ticket
+herdr-ticket ABC-123 --print-branch     # what it would call the branch
+herdr-ticket --list                     # what is open
+herdr-ticket --close ABC-123 --delete-branch
+```
+
+`--ticket` splits the ticket body in below the agent, through the same renderer
+`prefix+j` uses. `--no-agent` leaves a plain shell.
+
+**The branch.** An existing branch carrying the key is reused; two of them is a
+question it refuses to answer for you. Otherwise the name is derived from the
+ticket — `fix/` for a Bug and `feat/` otherwise, then the key and a slug of the
+title with the `[Area] |` prefix dropped. It gets the shape right and the words
+roughly, which is why the keypress offers it for editing rather than imposing it.
+
+**Which workspace.** A repo is usually open in more than one — a stray pane
+`cd`'d into another checkout is enough — so the anchor is the workspace holding
+the *most* of that repo's panes, and the ticket's tab goes there.
+
+**Cleaning up.** `--close` refuses to bin a worktree with uncommitted changes or
+a branch that has never been pushed; it closes the panes, removes the worktree,
+and with `--delete-branch` drops the branch if it merged. The worktrees are
+excluded through `.git/info/exclude` rather than `.gitignore`, so they stay out
+of `git status` without committing a rule to a repo that did not ask for one.
 
 ### Theme
 

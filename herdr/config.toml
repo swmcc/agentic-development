@@ -3,6 +3,10 @@ onboarding = false
 prefix = "ctrl+a"
 goto = "prefix+f"
 switch_workspace = "prefix+shift+1..9"
+# rename_tab ships on prefix+shift+t and silently wins over the ticket popup
+# bound to the same key below, so it moves here. Comma is the tmux convention
+# for rename, and nothing else uses it.
+rename_tab = "prefix+comma"
 
 [ui.toast]
 delivery = "system"
@@ -18,6 +22,17 @@ description = "run lazygit"
 width = "80%"
 height = "80%"
 
+# The merge requests waiting on you, across every repo you have checked out.
+# Wide and tall because it is a list you scan, not a prompt you answer.
+# Shift, for the same reason as the c2 board below: plain prefix+c is a built-in.
+[[keys.command]]
+key = "prefix+shift+r"
+type = "popup"
+command = "collie"
+description = "merge requests waiting on you"
+width = "92%"
+height = "88%"
+
 [[keys.command]]
 key = "prefix+t"
 type = "popup"
@@ -25,6 +40,21 @@ command = "exec bash -c 'read -rp \"Label: \" l; [ -n \"$l\" ] || exit 0; read -
 description = "new workspace with standard tabs"
 width = "60%"
 height = "30%"
+
+# A pane per ticket, in the repo's own workspace, standing in a worktree of its
+# own. Shift because plain prefix+t is the workspace scaffold, and the two are
+# neighbours: that one opens a repo, this one opens a piece of work inside it.
+#
+# The branch is offered for editing rather than imposed — the name is derived
+# from the ticket's own type and title, which gets the shape right and the words
+# only roughly. The popup takes the repo from the pane you press it in.
+[[keys.command]]
+key = "prefix+shift+t"
+type = "popup"
+command = "exec bash -c 'read -rp \"Ticket: \" k; [ -n \"$k\" ] || exit 0; b=$(herdr-ticket \"$k\" --print-branch) || { echo; read -rsn1 -p \"── any key to close ──\"; exit 0; }; read -rep \"Branch: \" -i \"$b\" nb; herdr-ticket \"$k\" --branch \"${nb:-$b}\" --ticket; echo; read -rsn1 -p \"── any key to close ──\"'"
+description = "open a ticket in a pane of its own"
+width = "70%"
+height = "40%"
 
 # Capture a thought straight into today's daily note, from whatever workspace
 # you happen to be in. Timestamped, because /washup cares when a decision was
