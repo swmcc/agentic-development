@@ -110,6 +110,12 @@ class SweepTest(unittest.TestCase):
         self.assertEqual(picked(out), [("frontend", 1622), ("frontend", 1624)])
         self.assertEqual(why[("graph-manager", 833)], "not in --repo")
 
+    def test_an_mr_another_sweep_is_reviewing_is_skipped(self):
+        opts = SimpleNamespace(mode="mine", author=[], repo=[], cap=6, claimed={f"{FE}/1622"})
+        out = sweep(parse(CHANNEL), lambda p, i: GITLAB.get((p, i)), set(), opts)
+        why = {(r["repo"], r["iid"]): r["skip_reason"] for r in out["skipped"]}
+        self.assertEqual(why[("frontend", 1622)], "review in progress")
+
     def test_an_mr_already_drafted_is_skipped(self):
         _, why = run(drafts={("frontend", 1622)})
         self.assertEqual(why[("frontend", 1622)], "already drafted")
@@ -134,6 +140,13 @@ class SweepTest(unittest.TestCase):
     def test_newest_ts_is_the_latest_message(self):
         out, _ = run()
         self.assertEqual(out["newest_ts"], "1793266407.971779")
+        self.assertEqual(out["resume_ts"], out["newest_ts"])
+
+    def test_a_sweep_over_the_cap_resumes_before_what_it_left(self):
+        out, _ = run(mode="all", cap=2)
+        oldest_left = min(float(r["posted_ts"]) for r in out["over_cap"])
+        self.assertLess(float(out["resume_ts"]), oldest_left)
+        self.assertGreater(float(out["resume_ts"]), oldest_left - 0.001)
 
 
 if __name__ == "__main__":
