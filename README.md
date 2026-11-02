@@ -94,6 +94,7 @@ symlinks them into `~/.claude/skills`.
 |-------|---------|
 | `dependabot-automerge` | Set up, audit, or fix Dependabot auto-merge so patch/minor merge only after tests pass and majors never do |
 | `sitrep` | Read the command centre and say what actually needs you — the judgement layer over `c2` |
+| `postie` | Send a Slack ask on my behalf, drafted in my voice and sent only once I say so, signed as Postie |
 
 Audit any repo without changing it:
 
