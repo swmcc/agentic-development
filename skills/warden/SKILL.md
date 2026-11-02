@@ -28,7 +28,7 @@ Others who turn up often, by Slack ID: Paddy McDermott `U0BKWHTFN3S`, Srigoutam 
 
 - **Page each person once, and never in a table.** Outside the tables, the first time the report names someone, write the Slack mention `<@USERID>` so they're notified; after that, use their first name in plain text. Someone with a Waiting on line is mentioned there and nowhere earlier. That includes Stephen. The footer always says "Stephen" in plain text.
 - **Waiting on pages whoever it waits on.** Each line opens with the person it's waiting on (their one mention, per the rule above), links where it was asked (`<permalink|asked>`) and says since when. The morning round reads these lines.
-- **No bare URLs.** Every link is a labelled markdown link, `[label](url)`, so the reader sees `COS-4128` or `collective-engine!1045` and never the address. That goes for tickets, MRs, Confluence pages and Slack permalinks.
+- **No bare URLs.** Every link is a labelled markdown link, `[label](url)`, so the reader sees `COS-4128` or `collective-engine!1045` and never the address. That goes for tickets, MRs, Confluence pages and Slack permalinks. **Never** Slack's own `<url|label>` form, anywhere: inside a table its `|` splits the cell and the reader sees the raw address.
 
 ## 1. Find the baseline
 
@@ -146,11 +146,11 @@ Shape:
 
 
 ​
-## 🔀 MRs
+## 🔀 MRs worth a look
 <n> went up, <n> reviewed (<n> approved, <n> changes requested), <n> merged
 | MR | Ticket | State | Why it matters |
 |---|---|---|---|
-(only the ones worth naming: changes requested, and merges that unblock or close a ticket)
+(only changes requested, and merges that unblock or close a ticket; every MR is already in its ticket's Moving row. Say that in one italic line under the table: _Every MR is in its ticket's row in Moving; these are the ones that need a look._)
 
 
 ​
