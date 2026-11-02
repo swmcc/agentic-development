@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from state import live_claims, load as load_state
+
 ME_GITLAB = "swmcc_whitespace"
 ME_SLACK = "U082BL09HK4"
 REVIEWS_DIR = Path(os.environ.get("COLLIE_REVIEWS_DIR", Path.home() / "Documents/wiki/reviews"))
@@ -141,6 +143,7 @@ def skip_reason(m, mr, drafts, opts):
         (mr and mr["author"] == ME_GITLAB, "mine"),
         (mr and ME_GITLAB in mr["approved_by"], "already approved by me"),
         ((repo, m.iid) in drafts, "already drafted"),
+        (m.url in getattr(opts, "claimed", ()), "review in progress"),
         (opts.repo and repo.lower() not in opts.repo, "not in --repo"),
         (opts.author and mr and not _matches(opts.author, [m.posted_by, mr["author"], mr["author_name"]]),
          "not in --author"),
@@ -166,12 +169,17 @@ def sweep(messages, lookup, drafts, opts):
         why = skip_reason(m, mr, drafts, opts)
         (skipped if why else keep).append({**row, "skip_reason": why})
     keep.sort(key=lambda r: float(r["posted_ts"] or 0))
+    over_cap = keep[opts.cap :]
     newest = max((float(m.ts) for m in messages if m.ts), default=None)
+    # Resume just before the oldest post left over the cap, so the next sweep reads it again.
+    # Its MRs already reviewed this run are skipped then as already drafted.
+    resume = min(float(r["posted_ts"]) for r in over_cap) - 0.000001 if over_cap else newest
     return {
         "selected": keep[: opts.cap],
-        "over_cap": keep[opts.cap :],
+        "over_cap": over_cap,
         "skipped": skipped,
         "newest_ts": f"{newest:.6f}" if newest is not None else None,
+        "resume_ts": f"{resume:.6f}" if resume is not None else None,
     }
 
 
@@ -190,6 +198,7 @@ def options(argv):
 
 def main(argv):
     opts = options(argv)
+    opts.claimed = set(live_claims(load_state()))
     messages = parse(Path(opts.channel).read_text())
     print(json.dumps(sweep(messages, gitlab_lookup, existing_drafts(), opts), indent=2))
 

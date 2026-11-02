@@ -63,6 +63,12 @@ Show the `selected` rows, one line each: `repo!iid`, the title, who posted it, a
 
 ## 4. Review, without holds
 
+First claim the selected MRs, so a sweep that fires while these reviews are still running (on `/loop`, the next one usually will) skips them instead of reviewing them twice:
+
+```bash
+python3 $S/state.py claim <url> <url> ...
+```
+
 Run `/review-mr --no-hold <url> <url> ...` with the selected links (or the links given as arguments). For more than one link it follows its own "Several MRs at once" flow: overlap groups, one agent per group in parallel, a draft per MR. Take its report, then carry on here instead of waiting for me to say "post". For this sweep, the request to post has already been given.
 
 ## 5. Post each review
@@ -97,8 +103,10 @@ For a run given MR links, read the channel with `--days 3` first, so the script 
 ## 6. Save state and report
 
 ```bash
-python3 $S/state.py set <newest_ts from candidates.json>
+python3 $S/state.py set <resume_ts from candidates.json>
 ```
+
+Then release this run's claims with `python3 $S/state.py release <url> ...`, posted or not. A failed post still has its draft, so it's skipped as already drafted. A claim left behind by a run that died lapses after two hours.
 
 Save it after posting, so a run that fails part way reads the same messages again next time. Don't save it for a run made with only MR links, since that run never read Slack.
 
