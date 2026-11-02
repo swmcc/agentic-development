@@ -24,7 +24,7 @@ Collie can't do this part itself, because only a Claude session can read Slack. 
 | `--author lee,ryan` | only MRs by these people: a case-insensitive prefix of the Slack poster's name or the GitLab author |
 | `--repo graph-manager,frontend` | only MRs in these repos (the project's last path segment) |
 | `--days N` | read N days back instead of only what's new since the last sweep |
-| `--cap N` | at most N reviews this run (default 6); the rest are listed, not dropped |
+| `--cap N` | at most N reviews this run (default 10); the rest are listed, not dropped |
 | `--no-post` | write the drafts but don't post them; they show as `P` in collie for me to post |
 | MR links | skip Slack and review exactly these links: go straight to step 4 |
 
@@ -39,15 +39,29 @@ python3 $S/state.py oldest              # or: state.py oldest --days N
 
 That prints the Slack timestamp to read from. By default it's the last sweep, or the start of today on a first run. Never go further back unless `--days` was given.
 
-Read `#collective-mrs` with `slack_read_channel` (`channel_id: C0AKFUXG80J`, `oldest: <that ts>`, `limit: 100`, `response_format: detailed`). Follow `cursor` until there are no more pages. Save every page's `messages` text, concatenated and unchanged, to `<scratchpad>/mr-sweep/channel.txt`. If nothing is new, say so in one line and stop. Don't save state.
+Read `#collective-mrs` with `slack_read_channel` (`channel_id: C0AKFUXG80J`, `oldest: <that ts>`, `limit: 100`, `response_format: detailed`). Follow `cursor` until there are no more pages. Save every page's `messages` text, concatenated and unchanged, to `<scratchpad>/mr-sweep/channel.txt`. If nothing is new in either room, say so in one line and stop. Don't save state.
+
+### The priority room, read first
+
+For now, MRs posted in **#rbacgbacdev** (`C0CB4EKSHDW`, the RBAC/GBAC room) are reviewed before anything in #collective-mrs. Read it the same way, from its own place, and save it to `<scratchpad>/mr-sweep/priority.txt`:
+
+```bash
+python3 $S/state.py oldest --channel C0CB4EKSHDW
+```
+
+The room is mostly Jira notices and chat. Only messages that link a GitLab MR matter, including posts forwarded from #collective-mrs. Remove this section when the RBAC/GBAC push is over.
 
 ## 2. Pick out the candidates
 
+Run the priority room first. Claim its `selected` straight away (step 4), then run #collective-mrs with the cap that's left, so the priority room's MRs take the first places and the claims stop either list picking an MR twice:
+
 ```bash
-python3 $S/candidates.py <scratchpad>/mr-sweep/channel.txt [--mode all] [--author ...] [--repo ...] [--cap N] > <scratchpad>/mr-sweep/candidates.json
+python3 $S/candidates.py <scratchpad>/mr-sweep/priority.txt [--mode all] [--author ...] [--repo ...] [--cap N] > <scratchpad>/mr-sweep/priority.json
+python3 $S/state.py claim <priority selected urls>
+python3 $S/candidates.py <scratchpad>/mr-sweep/channel.txt [--mode all] [--author ...] [--repo ...] --cap <N minus priority selected> > <scratchpad>/mr-sweep/candidates.json
 ```
 
-Pass `--mode all` only when the argument `all` was given. The script removes duplicate links, so a bump counts once. It checks each MR against GitLab and against my existing drafts, and drops anything that is:
+If the priority room fills the cap, skip the second run; #collective-mrs keeps its place and is read again next time. Pass `--mode all` only when the argument `all` was given. The script removes duplicate links, so a bump counts once. It checks each MR against GitLab and against my existing drafts, and drops anything that is:
 - struck through in Slack
 - a Review Bot template update
 - not open
@@ -98,13 +112,18 @@ python3 $S/slack_reply.py <scratchpad>/mr-sweep/channel.txt <scratchpad>/mr-swee
 
 It groups the posted reviews by the newest channel post that links each MR, so a bump gets the reply, and there's one reply per post, never one per MR. Send each with `slack_send_message` (`channel_id: C0AKFUXG80J`, `thread_ts`, `message: text`). It covers every posted verdict: approved, changes requested and comments. A review that failed to post gets no reply.
 
+Then do the same for the priority room, with `priority.txt`, and send its replies with `channel_id: C0CB4EKSHDW`. An MR posted in both rooms gets a reply in each, so the RBAC/GBAC room can see it's done without going to #collective-mrs. A post forwarded into the room has its own thread there; reply to that.
+
 For a run given MR links, read the channel with `--days 3` first, so the script can find the posts. Any MR it lists as `unmatched` was never posted in the channel, and gets no reply. With `--no-post`, skip this step.
 
 ## 6. Save state and report
 
 ```bash
 python3 $S/state.py set <resume_ts from candidates.json>
+python3 $S/state.py set <resume_ts from priority.json> --channel C0CB4EKSHDW
 ```
+
+Set each room only if that room was read this run.
 
 Then release this run's claims with `python3 $S/state.py release <url> ...`, posted or not. A failed post still has its draft, so it's skipped as already drafted. A claim left behind by a run that died lapses after two hours.
 
