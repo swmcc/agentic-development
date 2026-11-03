@@ -54,18 +54,28 @@ def test_notes_name_the_branch_when_the_mr_below_is_not_mine():
     assert stray.notes_for(mr(target_branch="release/1.2"), []) == ["stacked on release/1.2"]
 
 
-def test_render_uses_the_team_shape_and_markdown_links():
+def test_render_puts_the_cow_on_top_then_a_blank_line_then_the_mrs():
     row = stray.row(mr(), [])
     cow = {"name": "Joe Graze", "emoji": ":ear_of_rice:", "line": "found grazing the backlog"}
-    text = stray.render([row], cow)
-    first, _, last = text.split("\n")
-    assert first == (
+    lines = stray.render([row], cow).split("\n")
+    assert lines[0] == ":ear_of_rice: **Joe Graze has wandered in with 1 MR for review**, found grazing the backlog"
+    assert lines[1] == ""
+    assert lines[2] == (
         ":eyes: :partymerge: ABC-12 - [collective-engine-api!534]"
         "(https://gitlab.com/whitedotspace/collective-os/services/collective-engine-api/-/merge_requests/534)"
         " - Let an environment turn off the inbound fallback"
     )
-    assert last.startswith(":ear_of_rice: _Joe Graze wandered in, found grazing the backlog.")
-    assert "<http" not in text
+    assert lines[-1] == stray.FOOTER
+    assert "<http" not in "\n".join(lines)
+
+
+def test_heading_counts_more_than_one_mr():
+    cow = {"name": "Joe Graze", "emoji": ":ear_of_rice:", "line": "x"}
+    assert "with 3 MRs for review" in stray.heading(cow, 3)
+
+
+def test_the_footer_emoji_is_not_a_cow_in_the_herd():
+    assert not any(c["emoji"] in stray.FOOTER for c in stray.herd())
 
 
 @pytest.fixture

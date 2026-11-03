@@ -37,7 +37,7 @@ python3 $S/stray.py cow                                   # {"name", "emoji", "l
 python3 $S/stray.py render <scratchpad>/stray/rows.json --cow "<name>" [--header "<line>"]
 ```
 
-Every cow gets a turn before any repeats. The herd is in `herd.json`: puns on the team's names, each with its own emoji. A cow's name is never an @mention, so nobody is paged by their own pun. Add a header only when it helps ("Changes ready for re-review").
+The post opens with the cow's line (`🦬 **Dylan McMoorley has wandered in with 2 MRs for review**, lost on the moor again`), a blank line, the MRs, then the herd's footer, the same every time: `:cowboy_approved: _Let in by the Stray Herd, Stephen's cattle: the MRs are his. Somebody herd them home, or reply here and he'll see it._` Every cow gets a turn before any repeats. The herd is in `herd.json`: puns on the team's names, each with its own emoji. A cow's name is never an @mention, so nobody is paged by their own pun. `--header` adds an extra line under the cow's, only when it helps ("Changes ready for re-review").
 
 ## 4. Show it, then stop
 

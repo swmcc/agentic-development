@@ -134,19 +134,27 @@ def mark_used(name):
     STATE.write_text(json.dumps(used))
 
 
-def footer(cow):
-    return (
-        f"{cow['emoji']} _{cow['name']} wandered in, {cow['line']}. "
-        "One of Stephen's strays: the MRs are his. Somebody herd them home._"
-    )
+def heading(cow, count):
+    """The cow's line on top, so the post stands out in a busy channel."""
+    mrs = "1 MR" if count == 1 else f"{count} MRs"
+    return f"{cow['emoji']} **{cow['name']} has wandered in with {mrs} for review**, {cow['line']}"
+
+
+FOOTER = (
+    ":cowboy_approved: _Let in by the Stray Herd, Stephen's cattle: the MRs are his. "
+    "Somebody herd them home, or reply here and he'll see it._"
+)
 
 
 def render(rows, cow, header=None):
-    lines = [header] if header else []
+    """Cow's heading, a blank line, any extra header, one line per MR, then the herd's footer."""
+    lines = [heading(cow, len(rows)), ""]
+    if header:
+        lines.append(header)
     for r in rows:
         note = f" ({', '.join(r['notes'])})" if r["notes"] else ""
         lines.append(f":eyes: :partymerge: {r['key']} - [{r['repo']}!{r['iid']}]({r['url']}) - {r['title']}{note}")
-    return "\n".join(lines) + "\n\n" + footer(cow)
+    return "\n".join(lines) + "\n\n" + FOOTER
 
 
 def main(argv=None):
