@@ -1,6 +1,6 @@
 ---
 name: postie
-description: Send a Slack ask on my behalf as Postie, my messenger. Drafts the message in my voice, shows it, and sends it only once I say so, signed with Postie's footer, then ticks it off in today's daily note. Use when the user types /postie, or asks to send, ask, chase or nudge someone on Slack for them ("ask G about the CI", "chase Steve on that", "send them both", "message the room").
+description: Send a Slack ask on my behalf as Postie, my messenger. Drafts the message in my voice, shows it, and sends it only once I say so, signed with Postie's footer, then records it on the ticket and in today's daily note. Also checks whether those asks have been answered. Use when the user types /postie, or asks to send, ask, chase or nudge someone on Slack for them ("ask G about the CI", "chase Steve on that", "send them both", "message the room"), or asks whether anyone has replied to what they sent.
 argument-hint: <who> <what to ask>
 ---
 
@@ -37,10 +37,37 @@ Show me each draft, where it's going, and to whom. Do not send until I say so ("
 
 Use `slack_send_message`. Set `thread_ts` when replying in an existing thread. Give me the link to each sent message.
 
-## 5. Tick it off
+## 5. Record it
 
-If today's daily note (`~/Documents/wiki/notes/dailies/YYYY-MM-DD.md`) has a task for this ask, strike it through and add who was asked, where and when, e.g. `~~Ask the CI owners …~~ asked G by DM at 14:18`. Otherwise add one line under `## 🛠️ What tasks do I need to complete?` saying who was asked and about what, already struck through. Leave the end-of-day and notes sections alone.
+Two places, each with its own job. The ticket is the lasting record; the daily note is the day's index of what's still waiting on someone.
+
+**The ticket.** If the ask is about a Jira ticket, add a comment there with `addCommentToJiraIssue`:
+
+```
+**Asked G (2 Nov, 14:18, Slack DM)** whether <the ask, in one sentence>. [Message](<slack link>)
+```
+
+**The daily note** (`~/Documents/wiki/notes/dailies/YYYY-MM-DD.md`):
+
+- If there's a task for this ask, strike it through and add who was asked, where and when, e.g. `~~Ask the CI owners …~~ asked G by DM at 14:18`.
+- Add a line to the `### 📮 Asks` list, just above the `Full triage →` line in the tasks section (create the heading if it isn't there):
+
+  ```
+  - <ticket link> · G (DM) · asked 14:18 · waiting: <what I'm after> · [msg](<slack link>)
+  ```
+
+Leave the end-of-day and notes sections alone.
 
 ## 6. Report
 
 One line per message: who, where, the link. Nothing else.
+
+## Checking for replies
+
+When I ask what's outstanding, what's waiting on people, or whether anyone's answered, go through every `waiting:` line in today's `📮 Asks` list (and yesterday's, if they're still waiting):
+
+1. Read the DM or the thread with `slack_read_channel` / `slack_read_thread`, from the ask's timestamp on. A reply in the channel just after it counts too. So does an answer given by action, such as the person taking the ticket, which shows in the Jira feed in `#rbacgbacdev`.
+2. For each one that's been answered:
+   - add the reply to the ticket, below the ask: `**G replied (14:51):** <one-line summary and what it means for the ticket>`
+   - change the Asks line from `waiting: …` to `replied 14:51: <the gist>`, or `answered 14:38 by <what they did>`, keeping anything still open, e.g. `; external portal users still open`
+3. Report one line per ask: answered (with the gist) or still waiting (and for how long).
