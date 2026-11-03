@@ -51,6 +51,8 @@ Send with `slack_send_message`: #collective-mrs first, then #rbacgbacdev if ther
 python3 $S/stray.py used "<name>"
 ```
 
+**Move each ticket to Peer Review.** For every key in the rows (not `NoTicket`), read its status. If it's To Do or In Progress, call `getTransitionsForJiraIssue`, pick the transition whose `to.name` is `Peer Review` and run it. Leave a ticket that's already in Peer Review, QA, Done or Not Required, and one assigned to someone else: say which you left and why. One key with several MRs moves once.
+
 Add one line to today's daily note (`~/Documents/wiki/notes/dailies/YYYY-MM-DD.md`) under the tasks: `- 🐄 <cow> let <n> MRs into #collective-mrs ([msg](<link>))`, plus the #rbacgbacdev link when there is one. Leave the end-of-day sections alone.
 
 ## 6. Report
