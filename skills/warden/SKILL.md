@@ -46,13 +46,15 @@ Keep the room's messages from `at` onwards: section 4 reads them.
 
 Jira, cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`, `searchResultMode: "all"` so you get `totalCount`, `fields: ["summary","status","assignee","resolutiondate","created"]`, never `description`:
 
+**The epic** means `(parent = COS-3789 OR labels = rbac-gbac)` everywhere below. A ticket that belongs in RBAC/GBAC but sits under another epic (Admin Panel, Tech Debt) carries the `rbac-gbac` label instead of moving, because a ticket has only one parent. Six joined this way on 3 Nov (COS-3896, COS-3998, COS-3999, COS-4116, COS-4141, COS-4210), so the 3 Nov report's total jumps by six; say so in one line on that day only.
+
 | Figure | JQL |
 |---|---|
-| total | `parent = COS-3789` |
-| done | `parent = COS-3789 AND statusCategory = Done` |
-| finished since | `parent = COS-3789 AND statusCategory = Done AND resolved >= "<at as yyyy-MM-dd HH:mm>"` |
-| moved since | `parent = COS-3789 AND status CHANGED AFTER "<at>" AND statusCategory != Done` |
-| new since | `parent = COS-3789 AND created >= "<at>"` |
+| total | `(parent = COS-3789 OR labels = rbac-gbac)` |
+| done | `(parent = COS-3789 OR labels = rbac-gbac) AND statusCategory = Done` |
+| finished since | `(parent = COS-3789 OR labels = rbac-gbac) AND statusCategory = Done AND resolved >= "<at as yyyy-MM-dd HH:mm>"` |
+| moved since | `(parent = COS-3789 OR labels = rbac-gbac) AND status CHANGED AFTER "<at>" AND statusCategory != Done` |
+| new since | `(parent = COS-3789 OR labels = rbac-gbac) AND created >= "<at>"` |
 
 `% done = done / total`, rounded to a whole number. Not Required counts as Done in Jira's own figure, so it does here; list retirements separately so they aren't mistaken for delivery. A ticket in QA or Peer Review is moving, not finished, even if it carries an old resolution date.
 
@@ -62,7 +64,7 @@ Responses truncate around five issues. Where you need the rows rather than the c
 
 ## 3. MRs in flight
 
-From Slack, since `at`: messages in **#collective-mrs** (`C0AKFUXG80J`) and the room that link a GitLab merge request and name a ticket key. Keep only MRs whose ticket is in the epic: check the keys with one JQL (`key in (...) AND parent = COS-3789`). For each MR, from the message, its reactions and its thread:
+From Slack, since `at`: messages in **#collective-mrs** (`C0AKFUXG80J`) and the room that link a GitLab merge request and name a ticket key. Keep only MRs whose ticket is in the epic: check the keys with one JQL (`key in (...) AND (parent = COS-3789 OR labels = rbac-gbac)`). For each MR, from the message, its reactions and its thread:
 
 - **merged** if it has an `mr-merged` reaction or the thread says so;
 - **reviewed** with the verdict, if a Mr. Sweep reply in its thread says so ("✅ approved", "🔁 changes requested");
@@ -76,9 +78,9 @@ This is the part a ticket count can't see. One line each; leave a line out when 
 
 - **Pages.** Confluence CQL: `ancestor = 2931359747 AND lastmodified >= "<at as yyyy-MM-dd>"` (the RBAC / GBAC page tree), plus pages created or edited since then by anyone on the team (`contributor in ("<account id>", ...)`) that are about RBAC, GBAC, access or testing it. Karim's test pages often sit outside the tree, so this second search is what finds them. Name each page, linked, new or edited, and whose. Leave out drafts nobody has shared in the room.
 - **Testing.** Karim's work on the native RBAC test suites: what he posted or asked in the room, test-suite MRs that went up, and anything the soak showed. In his own words where you can.
-- **Asks.** Slack search for `"Sent by Postie" after:<yyyy-MM-dd>` from Stephen. For each: who was asked what, in a few words, and **answered** or **waiting**, from its thread replies.
+- **Asks.** Slack search for `"Sent by Postie" after:<yyyy-MM-dd>` from Stephen. For each: who was asked what, in a few words, and **answered** or **waiting**. An answer counts wherever it was given: in the ask's thread, or a later message from that person in the same DM or channel. People often reply as a new message rather than in the thread.
 - **Ways of working.** When someone sets up something new for the team (tooling, a routine, a process), say who set it up and what it's for, in their words. On 2 Nov that's Stephen setting up Mr. Sweep to review MRs posted in the room first, and the Warden's daily report and morning round, "to move faster and collaborate better".
-- **The room.** Read the human messages in the room since `at` (skip the Jira bot and joins). Pull out decisions and agreements, changes to how the team works, and open questions still waiting on someone. Use people's own words where you can. Never reinterpret, never assign work to anyone who didn't take it, never blame anyone.
+- **The room.** Read the human messages in the room since `at` (skip the Jira bot and joins). Pull out decisions and agreements, changes to how the team works, and open questions still waiting on someone. Any question in the room put to a named person (a mention, or "X, could you...") with no answer since is a **Waiting on** line for that person, with its `asked` link. Never leave it only as a mention under Beyond the tickets: the morning round reads Waiting on and nothing else. Use people's own words where you can. Never reinterpret, never assign work to anyone who didn't take it, never blame anyone.
 
 ## 5. Write it
 
@@ -193,13 +195,14 @@ At 09:30 the next working day, the Warden goes back to its last report and chase
 
 1. Find the latest report in the room (the marker line). If it's more than three days old, stop.
 2. Take its *Waiting on* lines whose "since" date is the report's own date. Older ones have had their nudge.
-3. For each, check whether it's been answered since the report: a reply from that person in the report's thread or in the `asked` thread, or a comment from them on the linked ticket. Read the replies; a reply that answers counts, an "I'll look" doesn't.
-4. If anything is still open, post **one** reply in the report's thread. Each person is mentioned once, with their questions under them:
+3. For each, check whether it's been answered since the report: a reply from that person in the report's thread or in the `asked` thread, a later message from them in the same DM or channel as the ask, or a comment from them on the linked ticket. Read the replies; a reply that answers counts, an "I'll look" doesn't.
+4. If anything is still open, post **one** reply in the report's thread, with `reply_broadcast: true` so it also shows in the room. A reply left only in the thread goes unseen: nobody opens yesterday's report, and it posts as Stephen, so he gets no notification of his own. Each person is mentioned once, with their questions under them:
 
 ```
 🗝️ *Morning round:* still waiting on these from yesterday.
 • <@USERID>: <question>, <ticket linked> · <permalink|asked>
+• ~~Name: <question>, <ticket linked>~~ ✅ answered: <a few words>, written up on <ticket comment linked>
 🗝️ _The Warden's morning round, for Stephen. Reply here and he'll see it._
 ```
 
-If everything was answered, post nothing. Never post a morning round top-level, and never a second one in the same thread.
+A question answered since the report stays in the list struck through, with the name in plain text so nobody is paged for it, and a few words on the answer. When a comment on the ticket since the ask records the answer, link it (`?focusedCommentId=<id>`) so readers know it's on the ticket too; otherwise end at the few words. If everything was answered, post nothing. Never post a morning round as a separate top-level message (the broadcast thread reply is the one post), and never a second one in the same thread.
