@@ -2,7 +2,7 @@
 """Turn a read of #collective-mrs into the MRs worth reviewing.
 
 Usage:
-  candidates.py <channel.txt> [--mode mine|all] [--author a,b] [--repo r,s] [--cap 6]
+  candidates.py <channel.txt> [--mode mine|all] [--author a,b] [--repo r,s] [--cap 10]
 
 <channel.txt> is the text the Slack connector's slack_read_channel returns in its detailed
 format, saved as is. Prints JSON: `selected` (oldest post first, at most --cap), `over_cap`,
@@ -189,7 +189,7 @@ def options(argv):
     p.add_argument("--mode", choices=["mine", "all"], default="mine")
     p.add_argument("--author", default="")
     p.add_argument("--repo", default="")
-    p.add_argument("--cap", type=int, default=6)
+    p.add_argument("--cap", type=int, default=10)
     o = p.parse_args(argv)
     o.author = [a.strip().lower() for a in o.author.split(",") if a.strip()]
     o.repo = [r.strip().lower() for r in o.repo.split(",") if r.strip()]
