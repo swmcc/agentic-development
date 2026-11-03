@@ -71,6 +71,18 @@ If the priority room fills the cap, skip the second run; #collective-mrs keeps i
 - already drafted
 - outside the filters
 
+### Re-reviews: MRs that changed since my review
+
+Every sweep also looks for open MRs I've reviewed that have changed since and that I haven't approved (or whose approval dropped when they changed, which leaves them as stuck as a block). This comes from GitLab, not from Slack, so it runs even when neither room has anything new:
+
+```bash
+python3 $S/rereview.py [--author ...] [--repo ...] --out <scratchpad>/rereview > <scratchpad>/mr-sweep/rereview.json
+```
+
+It compares what each MR changes now against what it changed when I last commented, each against its own base. A rebase that changes nothing is left alone; new commits, an amend or a force-push come back. Each `selected` row carries the version I reviewed and the current one, and `--out` saves both versions' diffs.
+
+They share the cap: priority-room MRs first, then re-reviews (MRs someone has asked for a re-review of first, then RBAC/GBAC ones), then #collective-mrs. Claim them the same way. A re-review reads only what changed between the two versions, checks each of my earlier comments for whether it was addressed, and is graded on the standards like any review: if what blocked is fixed and nothing new blocks, it approves. When the summary lists an earlier blocking comment as fixed, it says "(was blocking)", never "(blocking", which `post-and-finish.sh` reads as a live block and refuses to post an approval over. Its draft goes under today's date; if that name is taken (a same-day re-review), add `-rereview` before `.md`. Its Slack reply goes in the thread that asked for the re-review if there is one, otherwise in the original post's thread.
+
 ## 3. Show the shortlist
 
 Show the `selected` rows, one line each: `repo!iid`, the title, who posted it, and whether I'm a reviewer. Then list `over_cap` the same way, and give a count of `skipped` grouped by reason. If `selected` is empty, say so, save state (step 6) and stop.
@@ -101,6 +113,8 @@ bash ~/.claude/skills/review-mr/scripts/post-and-finish.sh <group/project> <iid>
 - the verdict is APPROVE on a draft MR
 
 It publishes all or nothing, checks every inline comment landed on its line, and only then applies the verdict. A failure on one MR leaves that draft unposted, so collie shows it as `P` with nothing half-published. Carry on with the rest. Never retry a failed post by hand in this run. Say what it printed.
+
+If the MR merged or closed while it was being reviewed, the script still posts the comments, skips the verdict and says `verdict ... not applied: the MR is merged`. That review is done: log it as `posted`, with that line as its `note`, so it never lands under "Needs you".
 
 ## 5b. Reply in the Slack threads
 
