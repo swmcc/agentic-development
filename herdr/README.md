@@ -27,6 +27,7 @@ business in a public GitHub repo — drops an override into `~/.config/herdr`:
 |------------|----------|
 | `~/.config/herdr/repos.local.yaml` | `spreader.yaml` (the repo list) |
 | `~/.config/herdr/config.local.toml` | `config.toml` (keys, theme, UI) |
+| `~/.config/herdr/theme.local` | Just the theme name: `make setup-config` regenerates `config.local.toml` from `config.toml` with it |
 
 **Overrides replace, they never merge.** When `repos.local.yaml` exists the
 committed list is ignored outright, so a work machine shows work repos and

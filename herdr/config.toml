@@ -13,6 +13,10 @@ delivery = "system"
 
 [ui]
 show_agent_labels_on_pane_borders = true
+# Every machine names itself, so a session on one cannot pass for another.
+# Both resolve on the herdr server: `herdr --remote` shows the remote host.
+tab_bar_right = [{ type = "command", command = 'hostname -s | awk "{print toupper(substr(\$0,1,1)) substr(\$0,2)}"', interval_seconds = 3600 }, { type = "datetime", format = "%H:%M" }]
+window_title = "{hostname}: {workspace}"
 
 [[keys.command]]
 key = "prefix+g"
