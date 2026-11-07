@@ -90,6 +90,9 @@ Run `make help` for the full list.
 Claude Code skills live in `skills/`, one directory each, and `make setup-skills`
 symlinks them into `~/.claude/skills`.
 
+`/logbook` records commits, PRs and issues from any workspace in one shared
+[Commit Logbook](https://claude.ai/artifact/ShBvWRL1NJcuWo4AP1EwHK).
+
 | Skill | Purpose |
 |-------|---------|
 | `dependabot-automerge` | Set up, audit, or fix Dependabot auto-merge so patch/minor merge only after tests pass and majors never do |
