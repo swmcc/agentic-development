@@ -9,7 +9,7 @@ switch_workspace = "prefix+shift+1..9"
 rename_tab = "prefix+comma"
 
 [ui.toast]
-delivery = "system"
+delivery = "herdr"
 
 [ui]
 show_agent_labels_on_pane_borders = true
