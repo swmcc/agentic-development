@@ -30,14 +30,23 @@ GROUP = "whitedotspace"
 HUNK = re.compile(r"^@@[^@]*@@", re.M)
 
 
+PAGE = 20  # GitLab answers 500 on this group-wide query at 100 a page
+
+
 def my_open_reviews():
-    """The group's open MRs that list me as a reviewer, all pages."""
+    """The group's open MRs that list me as a reviewer, all pages.
+
+    A page GitLab fails to answer stops the run, so a failed read never looks like
+    "nothing to re-review".
+    """
     found, page = [], 1
     while True:
         batch = glab_json(f"groups/{GROUP}/merge_requests?state=opened"
-                          f"&reviewer_username={ME_GITLAB}&per_page=100&page={page}") or []
+                          f"&reviewer_username={ME_GITLAB}&per_page={PAGE}&page={page}")
+        if batch is None:
+            sys.exit(f"rereview: GitLab didn't answer page {page} of my reviews; try again")
         found += batch
-        if len(batch) < 100:
+        if len(batch) < PAGE:
             return found
         page += 1
 
