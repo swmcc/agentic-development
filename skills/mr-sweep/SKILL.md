@@ -39,7 +39,9 @@ python3 $S/state.py oldest              # or: state.py oldest --days N
 
 That prints the Slack timestamp to read from. By default it's the last sweep, or the start of today on a first run. Never go further back unless `--days` was given.
 
-Read `#collective-mrs` with `slack_read_channel` (`channel_id: C0AKFUXG80J`, `oldest: <that ts>`, `limit: 100`, `response_format: detailed`). Follow `cursor` until there are no more pages. Save every page's `messages` text, concatenated and unchanged, to `<scratchpad>/mr-sweep/channel.txt`. If nothing is new in either room, say so in one line and stop. Don't save state.
+Read `#collective-mrs` with `slack_read_channel` (`channel_id: C0AKFUXG80J`, `oldest: <that ts>`, `limit: 100`, `response_format: detailed`). Follow `cursor` until there are no more pages. Save every page's `messages` text, concatenated and unchanged, to `<scratchpad>/mr-sweep/channel.txt`.
+
+**A quiet run stops early.** If nothing is new in either room, run the re-review check (step 2) on its own. If its `selected` is empty too, reply with the single line `🧑‍🌾 Mr. Sweep: nothing new` and stop: no shortlist, no page document, no notification, and don't save state. Most sweeps on a timer are quiet, and this keeps each one small.
 
 ### The priority room, read first
 
@@ -165,6 +167,16 @@ Every run that read new messages writes one document, even if nothing in them wa
 
 `skipped` counts `candidates.json`'s skipped rows by `skip_reason`. **Write the document as soon as the first review is posted, and update it after each one after that**, using `update` with `if_version` from the previous write and the whole `reviews` list. That way the page shows each MR as it lands, rather than only when the slowest review finishes. A failed post is recorded as `not_posted` with its reason. The page lists those under "Needs you". Once I've posted one from collie, set its `status` to `posted` in that sweep's document, so it drops off the list.
 
+## 8. Notify in herdr
+
+When this run posted at least one review, or one failed to post, show **one** herdr notification. It appears inside the terminal, not as a macOS desktop notification:
+
+```bash
+command -v herdr >/dev/null && herdr notification show "🧹 Mr. Sweep" --body "<one line, failures first>" --position top-right --sound none
+```
+
+For example, the body could be `approved graph-manager!836, changes on engine!1130 · 1 not posted, needs you`. Keep it under 200 characters, with no markdown. A run where nothing happened shows nothing. Never use `PushNotification`: desktop notifications are off.
+
 ## On a timer
 
-`/loop 1h /mr-sweep` sweeps hourly in a session left open. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
+`/muster` runs it hourly in working hours. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
