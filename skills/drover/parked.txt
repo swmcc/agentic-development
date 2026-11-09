@@ -1,0 +1,4 @@
+# Ticket keys whose MRs the Drover leaves alone, one per line. Stephen parked these.
+# An MR link here is forgotten outright: the scan leaves it out altogether.
+COS-2868
+https://gitlab.com/swmcc_whitespace/skills/-/merge_requests/1
