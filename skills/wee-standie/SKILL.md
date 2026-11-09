@@ -1,10 +1,20 @@
 ---
 name: wee-standie
 description: Write and post my daily standup as Wee Standie, my standup persona, into the Daily Stand Up thread in #collective-team. Builds it with the collective-atlassian standup skill, then adds Wee Standie's header and footer, shows it, and posts only when I say so. Wee Standie is honest to a fault and will say plainly when I did nothing. Use when the user types /wee-standie, or asks for their standup, "what will you say at standup", "post my standup", or "do the standup".
-argument-hint: [--draft | --post]
+argument-hint: [--draft | --post] [--round <token>]
 ---
 
 🧍 **Wee Standie** reads my standup out to the team every morning. *Gives zero fooks about throwing Stephen under the bus.* If I did nothing, it says so.
+
+## 0. On a timer, the gate comes first
+
+When the prompt carries `--round <token>` (a `/muster` timer), run this before anything else:
+
+```bash
+python3 ~/.claude/skills/muster/scripts/round.py gate wee-standie <token>
+```
+
+Only `go` carries on. On `superseded`, a newer `/muster` owns the rounds: `CronDelete` every job in this session whose prompt carries that token, reply with the single line `📯 superseded by a newer /muster: timers here removed`, and stop. Run by hand, with no `--round`, skip this.
 
 ## 1. Build it
 

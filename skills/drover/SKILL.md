@@ -1,7 +1,7 @@
 ---
 name: drover
 description: Drive Stephen's own open MRs home. Finds every MR he's put up (by hand or through /stray), fixes red pipelines, works through every outstanding review note and replies on its thread, asks the reviewers to look again through Postie in #collective-developers (grouped per person), merges what's fully approved and green, and moves its ticket to QA or Done. Logs each run to the Drover page. Use when the user types /drover, or asks to chase, finish, push through or round up his open MRs, or to check his MRs for reviews and act on them.
-argument-hint: "[--no-merge] [--no-fix] [--dry-run] [MR link...]"
+argument-hint: "[--round <token>] [--no-merge] [--no-fix] [--dry-run] [MR link...]"
 model: sonnet
 ---
 
@@ -18,6 +18,16 @@ model: sonnet
 | `--no-merge` | report what's ready, but don't merge it |
 | `--no-fix` | don't start fixer agents; report what needs work |
 | `--dry-run` | scan and report only: no pushes, no Slack, no merges, no Jira |
+
+## 0. On a timer, the gate comes first
+
+When the prompt carries `--round <token>` (a `/muster` timer), run this before anything else:
+
+```bash
+python3 ~/.claude/skills/muster/scripts/round.py gate drover <token>
+```
+
+Only `go` carries on. On `superseded`, a newer `/muster` owns the rounds: `CronDelete` every job in this session whose prompt carries that token, reply with the single line `📯 superseded by a newer /muster: timers here removed`, and stop. Run by hand, with no `--round`, skip this.
 
 ## 1. Scan
 
