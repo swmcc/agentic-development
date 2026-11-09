@@ -32,7 +32,7 @@ Others who turn up often, by Slack ID: Paddy McDermott `U0BKWHTFN3S`, Srigoutam 
 
 ## 1. Find the baseline
 
-The baseline is the last report, not a state file. Read the room for the last three days (`slack_read_channel`, `response_format: detailed`, `oldest` three days back, follow the cursor) and find Stephen's most recent message containing the marker line:
+The baseline is the last report, not a state file. Find it with a search, not by reading the channel history, which gets truncated and misses thread replies: `slack_search_public_and_private`, keywords `["\"digest:COS-3789\""]`, filters `in:<#C0CB4EKSHDW> from:<@U082BL09HK4>`, sorted newest first. The marker is in part 2 of the report, a broadcast reply in part 1's thread (section 6), so read that thread for the full report. Fall back to reading the last four days of the room, following every cursor, only if the search finds nothing. The first result is Stephen's most recent message containing the marker line:
 
 ```
 digest:COS-3789 done=<n> total=<m> at=<ISO 8601 time>
@@ -181,7 +181,12 @@ Every section opens with its `##` emoji heading, with a blank line and a zero-wi
 
 ## 6. Post it
 
-Post it top-level in the room with `slack_send_message`. With `--draft`, show it and stop.
+Post it in two parts, because one post goes over Slack's length limit (`msg_too_long`). With `--draft`, show it and stop.
+
+1. **Part 1**, top-level in the room: from `<!here>` to the end of the Moving table.
+2. **Part 2**, as a reply in part 1's thread with `reply_broadcast: true`, so it also shows in the room: from New in the epic down to the marker and footer. The marker and footer always go in part 2.
+
+Keep each part under 4,000 characters; if one still fails for length, drop the MRs table first, then shorten the What column. Never drop Waiting on or the marker.
 
 **The @here never blocks the post.** Write it as `<!here>`, Slack's API form: posted through the API it notifies the room with no "notify everyone?" confirmation, which only appears when a person types `@here` in the Slack app. Never write a plain `@here`, which neither notifies nor posts any differently. If the send fails for any reason that mentions the mention (a channel-wide mention not allowed, a restricted channel), send it again straight away without `<!here>` and add `_(no @here: Slack refused it)_` above the marker. The report going out matters more than the ping.
 
@@ -193,7 +198,9 @@ If Jira or Slack failed outright, post nothing and say why: a report with a sile
 
 At 09:30 the next working day, the Warden goes back to its last report and chases what it was waiting on. Once per question: a question gets one morning nudge, the day after it first appears. After that it stays on the 16:15 report with its "since" date, so its age is visible without anyone being pinged daily.
 
-1. Find the latest report in the room (the marker line). If it's more than three days old, stop.
+**The round chases every unanswered Postie ask from the previous working day, as well as the report's Waiting on lines, in one post.** Postie asks are the main job. Search `"Sent by Postie"` from Stephen on that day, keep the ones that ask someone for something (not notes or answers), merge the copies posted to both #collective-mrs and #rbacgbacdev, and check each the same way as a Waiting on line below. For an ask sent by DM, say what it's about and "(asked by DM)", with no link. Every `asked` link is the exact permalink the search returned, never one you build yourself.
+
+1. Find the latest report with the same search as section 1 (the marker line). The thread to reply in is part 1's: the search result's `thread_ts`. If it's more than three days old, still chase the Postie asks, posting top-level in the room.
 2. Take its *Waiting on* lines whose "since" date is the report's own date. Older ones have had their nudge.
 3. For each, check whether it's been answered since the report: a reply from that person in the report's thread or in the `asked` thread, a later message from them in the same DM or channel as the ask, or a comment from them on the linked ticket. Read the replies; a reply that answers counts, an "I'll look" doesn't.
 4. If anything is still open, post **one** reply in the report's thread, with `reply_broadcast: true` so it also shows in the room. A reply left only in the thread goes unseen: nobody opens yesterday's report, and it posts as Stephen, so he gets no notification of his own. Each person is mentioned once, with their questions under them:
