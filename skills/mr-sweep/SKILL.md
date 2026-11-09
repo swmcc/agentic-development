@@ -1,7 +1,7 @@
 ---
 name: mr-sweep
 description: Pick up the merge requests people have posted in the #collective-mrs Slack channel since the last sweep, review them with /review-mr, and post each review with its verdict, without opening collie and without holding anyone's merge. Filters by author and repo. Use when the user types /mr-sweep, or asks to review what's been posted in collective-mrs, sweep the MR channel, or pick up new MRs from Slack.
-argument-hint: "[all] [--author a,b] [--repo r,s] [--days N] [--cap N] [--no-post] [MR link...]"
+argument-hint: "[--round <token>] [all] [--author a,b] [--repo r,s] [--days N] [--cap N] [--no-post] [MR link...]"
 ---
 
 🧑‍🌾 **Mr. Sweep**: *Collie rounds them up. Mr. Sweep sees them through.* `mr-sweep` reads as Mr. Sweep, the shepherd who directs collie, the sheepdog.
@@ -29,6 +29,16 @@ Collie can't do this part itself, because only a Claude session can read Slack. 
 | MR links | skip Slack and review exactly these links: go straight to step 4 |
 
 They combine: `/mr-sweep all --author lee --repo graph-manager` takes every new graph-manager MR from Lee.
+
+## 0. On a timer, the gate comes first
+
+When the prompt carries `--round <token>` (a `/muster` timer), run this before anything else:
+
+```bash
+python3 ~/.claude/skills/muster/scripts/round.py gate mr-sweep <token>
+```
+
+Only `go` carries on. On `superseded`, a newer `/muster` owns the rounds: `CronDelete` every job in this session whose prompt carries that token, reply with the single line `📯 superseded by a newer /muster: timers here removed`, and stop. Run by hand, with no `--round`, skip this.
 
 ## 1. Read the channel
 
