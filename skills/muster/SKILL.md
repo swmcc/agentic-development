@@ -1,6 +1,6 @@
 ---
 name: muster
-description: Start Stephen's background rounds in this session, Mr. Sweep (reviews other people's MRs, hourly in working hours), the Drover (drives his own MRs home, hourly in working hours), Wee Standie (posts his standup, weekdays at 08:47), the washup (writes his end of day, weekdays at 16:02) and tomorrow's plan (weekdays at 16:32). Safe to run any time, in any session; the newest muster takes the rounds over and older sessions' timers switch themselves off. Use when the user types /muster, or asks to start, restart or kick off the sweep and the drover, or his loops, rounds or standup.
+description: Start Stephen's background rounds in this session: the Drover (drives his own MRs home, every half hour in working hours), Wee Standie (posts his standup, weekdays at 08:47), the washup (writes his end of day, weekdays at 16:02) and tomorrow's plan (weekdays at 16:32). Safe to run any time, in any session; the newest muster takes the rounds over and older sessions' timers switch themselves off. Use when the user types /muster, or asks to start, restart or kick off the sweep and the drover, or his loops, rounds or standup.
 argument-hint: "[--renew <token>]"
 ---
 
@@ -26,18 +26,18 @@ So running `/muster` again, here or in a fresh session, never doubles a post: th
 
    | Round | cron | prompt |
    |---|---|---|
-   | Mr. Sweep | `7 9-17 * * 1-5` | `/mr-sweep --round <T>` |
    | The Drover | `22,52 9-17 * * 1-5` | `/drover --round <T>` |
    | Wee Standie | `47 8 * * 1-5` | `/wee-standie --post --round <T>` |
    | Washup | `2 16 * * 1-5` | `/washup --round <T>` |
    | Tomorrow's plan | `32 16 * * 1-5` | `/workplan day for the next working day --round <T> (tomorrow, or Monday when today is Friday): use that day's calendar, carry over what today's washup put under Carried into tomorrow, and keep building against the M1 label on COS-3789` |
 
-   The minutes are off the hour so none of them fire together. Mr. Sweep runs hourly and the Drover every half hour, because it's Stephen's own MRs that wait on it. Both run weekdays 09:00 to 17:59 only: overnight and weekend runs were nearly all quiet, and still cost a full read of the session each time.
+   **Mr. Sweep is off (from 10 Nov).** Its reviews were by far the dearest round, and Stephen wants the team to carry its share of reviewing. Don't book it; he runs `/mr-sweep <link>` by hand for a review someone asks him for. To bring it back, add the row `| Mr. Sweep | `7 9-17 * * 1-5` | `/mr-sweep --round <T>` |` and its schedule bullet in step 5.
+
+   The minutes are off the hour so none of them fire together. The Drover runs every half hour, because it's Stephen's own MRs that wait on it, weekdays 09:00 to 17:59 only: overnight and weekend runs were nearly all quiet, and still cost a full read of the session each time.
    A hand-made `/loop` of Mr. Sweep or the Drover carries no token, so nothing switches it off. If one is running in another session, say so and ask Stephen to stop it there.
 4. **Book the renewal.** One `CronCreate` with `recurring: false`, prompt `/muster --renew <T>`, pinned to 6 days from now at 08:23 (`23 8 <dom> <month> *`). It rebuilds everything a day before anything expires and books the next one, as long as this session still owns the rounds.
-5. **Record the schedule on the pages.** The scheduler fires each job a fixed number of minutes after its cron slot, and `CronCreate` reports the job's real next run. For Mr. Sweep and the Drover, the offset is that next run minus the slot it belongs to (e.g. slot 14:07, next run 14:35: offset 28). Write one `ArtifactData` `set` to each page, `collection: "schedule"`, `doc_id: "m<unix seconds now>"`, no `if_version`:
-   - Mr. Sweep (https://claude.ai/artifact/GnAtN8G71nMrdui5DqjUex): `{"at": "<ISO now>", "minute": 7, "hours": [9, 17], "days": [1, 5], "offset_min": <its offset>, "renew_at": "<ISO of the renewal>"}`
-   - The Drover (https://claude.ai/artifact/LRdFyqdp2Ee5t6R3GcXFNf): the same with `"minutes": [22, 52]` in place of `"minute"`, and its own offset.
+5. **Record the schedule on the pages.** The scheduler fires each job a fixed number of minutes after its cron slot, and `CronCreate` reports the job's real next run. For the Drover, the offset is that next run minus the slot it belongs to (e.g. slot 14:22, next run 14:23: offset 1). Write one `ArtifactData` `set` to its page, `collection: "schedule"`, `doc_id: "m<unix seconds now>"`, no `if_version`:
+   - The Drover (https://claude.ai/artifact/LRdFyqdp2Ee5t6R3GcXFNf): `{"at": "<ISO now>", "minutes": [22, 52], "hours": [9, 17], "days": [1, 5], "offset_min": <its offset>, "renew_at": "<ISO of the renewal>"}`
 
    Each page works out its next run from the newest schedule, and flags a missed run when a slot passes with no heartbeat.
 6. Report in five lines: what was started and when each next fires. Add one line saying when the renewal fires, and that everything stops if the session closes, so run `/muster` again in a new session.
