@@ -55,10 +55,29 @@ Jobs that also fail on main's latest pipeline are listed under `failing_on_main_
 Unless MR links or `--dry-run` were given, check the scan against the last finished run before reading it:
 
 ```bash
-python3 $D/scripts/quiet.py check <scratchpad>/drover/scan.json
+python3 $D/scripts/quiet.py check <scratchpad>/drover/scan.json; python3 $D/scripts/state.py open-asks <scratchpad>/drover/scan.json; python3 $D/scripts/state.py waiting-on <scratchpad>/drover/scan.json
 ```
 
-If it prints `quiet`, nothing has moved since then: reply with the single line `🐂 The Drover: nothing changed` and stop. Don't read `scan.json`, write to the page, report or notify. Most runs on a timer are quiet, and this keeps each one to a couple of hundred tokens.
+The second command lists the Postie asks worth reading for replies (step 1b), and prints `[]` when nothing is out. The third is the Waiting on list that goes in the heartbeat (step 9).
+
+- **`quiet` and `[]`:** nothing has moved. Write the heartbeat (step 9), reply with the single line `🐂 The Drover: nothing changed` and stop.
+- **`quiet` with asks listed:** in **one message**, read each ask's thread (step 1b) and write the heartbeat as `nothing changed`, as parallel calls, so the reply check costs no extra round trip. If no reply needs anything, reply `🐂 The Drover: nothing changed` and stop.
+
+A quiet run doesn't read `scan.json`, write a drive to the page, report or notify. Most runs on a timer are quiet, and this keeps each one to a couple of hundred tokens.
+
+### 1b. Read replies to my asks
+
+Every Postie ask is tracked here, not just the Drover's own re-review asks: Postie records each one it sends. People often answer a re-review ask in Slack instead of on GitLab, and every other ask is only ever answered in Slack. For each ask `open-asks` listed, call `slack_read_thread` with its `channel`, `message_ts` set to its `thread`, and `oldest` set to its `seen`. Look only at replies newer than `seen`, and skip Stephen's own (`U082BL09HK4`), since those are his answers. Then:
+
+| The reply | What to do |
+|---|---|
+| Approved, looked, done, "on it", "after lunch", "back Thursday" | Nothing to act on. Record it with `state.py replied <ask ts> <reply ts> <who> <reply permalink> "<gist>"`, so Waiting on shows it, and put its gist in that MR's row `note`, e.g. `Steve: looking after lunch`. GitLab shows an approval on the next scan. |
+| An answer to what a non-MR ask wanted | `state.py replied ...` as above. Once everyone it asked has answered, or the one answer settles it, `state.py done <ask ts>`. |
+| A question, a review point made in Slack, "ask someone else", "fine, merge it" without approving on GitLab, a disagreement | Record it with `state.py pending <ask ts> <reply ts> <mr url, or - for a non-MR ask> <who> <reply permalink> "<gist>"`. It goes under **Needs you** until Stephen answers. Never act on it alone: never merge on a Slack word, and never add reviewers. |
+
+After each thread, record what was read: `state.py seen <ask ts> <newest reply ts>`. For a pending reply, if Stephen has since replied in that thread, run `state.py clear <ask ts> <reply ts>`.
+
+Every pending reply on an MR that's still open is a `needs_you` row in every drive (step 5) until it's cleared, with the reply's permalink in `link` and `<who>: <gist>` in `note`. A pending reply on a non-MR ask shows in Waiting on as needs you. If a pending reply turns up on a quiet run, the run isn't quiet: carry on and write a drive.
 
 ## 2. Merge what's ready
 
@@ -160,7 +179,10 @@ After sending, record every ask:
 
 ```bash
 python3 $D/scripts/state.py asked <url> <sha> <reviewer username> ...
+python3 $D/scripts/state.py posted C0C2MTJMQ91 <message ts> <permalink> --who "<names>" --what "re-review of <repo>!<iid>, ..." <url> <url> ...
 ```
+
+`posted` takes every MR in the message, so later runs can read its thread for replies (step 1b).
 
 With `--dry-run`, show the message and don't send it.
 
@@ -181,7 +203,8 @@ Use `ArtifactData` `set`:
     {"repo": "collective-engine", "iid": 1119, "url": "<MR link>", "title": "<title>", "ticket": "COS-2115",
      "action": "merged|fixed|asked|waiting|running|needs_you|parked",
      "status": "<Jira status after this run, e.g. Done, QA, Peer Review>",
-     "note": "<one line: what changed, who it waits on, or what needs Stephen>"}
+     "note": "<one line: what changed, who it waits on, or what needs Stephen>",
+     "link": "<optional: the Slack reply that needs Stephen>"}
   ],
   "posts": [{"label": "re-review ask", "url": "<Slack permalink>"}]
 }
@@ -190,7 +213,7 @@ Use `ArtifactData` `set`:
 Use one row per open MR, plus one for each MR merged this run.
 - `waiting`: it was already asked at this head, so nothing was sent.
 - `asked`: this run sent the Postie.
-- `needs_you`: anything this run couldn't settle on its own.
+- `needs_you`: anything this run couldn't settle on its own, including every pending Slack reply from step 1b.
 
 ## 6. Report
 
@@ -216,6 +239,10 @@ python3 $D/scripts/scan.py > <scratchpad>/drover/scan.json && python3 $D/scripts
 
 The fresh scan matters: this run's merges, pushes and asks changed the rows, and saving the first scan would make the next run look busy. Skip this for a `--dry-run` or a run given MR links.
 
+## 9. Heartbeat
+
+Every run that got past the gate, quiet ones included, writes one heartbeat. Send it alongside the run's last tool call, as a parallel call in the same message, never as a round trip of its own, since each round trip re-reads the whole session. It's one `ArtifactData` `set` on the **Drover** page: `collection: "beats"`, `doc_id: "b<unix seconds now>"`, no `if_version`, data `{"at": "<ISO 8601 with offset>", "outcome": "<nothing changed, or this run's one-line summary>", "waiting_on": <the waiting-on list, as printed>}`. Take `waiting_on` from the `state.py waiting-on` output this run printed, run again after any `replied`, `done`, `pending` or `clear`. The page's Waiting on section is the newest heartbeat's list. The page's last-run and next-run line reads it, along with the schedule `/muster` records, so it always says when the Drover last ran even after a quiet hour. Skip it for a `--dry-run`.
+
 ## On a timer
 
-`/muster` runs it hourly in working hours. `/loop 1h /drover` does the same by hand in a session left open, like Mr. Sweep. A run only acts on what changed: claims stop overlapping runs working the same MR, and the asked-at-this-head record stops a reviewer being pinged twice for the same push.
+`/muster` runs it every half hour in working hours. `/loop 30m /drover` does the same by hand in a session left open, like Mr. Sweep. A run only acts on what changed: claims stop overlapping runs working the same MR, and the asked-at-this-head record stops a reviewer being pinged twice for the same push.
