@@ -39,7 +39,15 @@ Use `slack_send_message`. Set `thread_ts` when replying in an existing thread. G
 
 ## 5. Record it
 
-Two places, each with its own job. The ticket is the lasting record; the daily note is the day's index of what's still waiting on someone.
+Three places, each with its own job. The ticket is the lasting record, the daily note is the day's index of what's still waiting on someone, and the Drover's record is what puts the ask on the Drover page's Waiting on list and gets its thread read for replies every half hour.
+
+**The Drover.** For every message that asks someone for something (not a note or an answer), one shell call:
+
+```bash
+python3 ~/.claude/skills/drover/scripts/state.py posted <channel id> <message ts> <permalink> --who "<first names asked>" --what "<what I'm after, a few words>"
+```
+
+For an ask posted as a reply in an existing thread, add `--thread <parent ts>`: the thread is read from the parent, and only replies after this one count.
 
 **The ticket.** If the ask is about a Jira ticket, add a comment there with `addCommentToJiraIssue`:
 

@@ -31,10 +31,12 @@ RUNNING = {"running", "pending", "created", "preparing", "waiting_for_resource",
 # A reviewer's note that only confirms or closes the loop needs no reply.
 CLOSING = re.compile(
     r"^\s*(\*\*)?(hold lifted|my comments are up|fixed in|fixed at|fixed:|confirmed fixed|checked at|"
+    r"(the )?fix(es)? look(s)? good|look(s)? good( to me)?|lgtm|all good|"
     r"re-review at [0-9a-f]+: (still )?approve\.?\*\*\s*$)",
     re.I,
 )
 APPROVAL_SUMMARY = re.compile(r"^\s*\**\s*(re-review at [0-9a-f]+: |review: )approve\b", re.I)
+HOLD_NOTE = re.compile(r"\s*I'm reviewing this now, so I've put a hold on merging", re.I)
 STILL_OPEN = re.compile(r"\b(required|consider|nit|major|minor|question|blocking)\b", re.I)
 # The label a reviewer opens a note with: **NIT**, **Required:**, **Consider:** and so on.
 LABEL = re.compile(r"^\s*\*\*\s*(nit|nitpick|required|consider|minor|major|question|fyi|blocking)\b", re.I)
@@ -102,6 +104,9 @@ def open_threads(pid, iid, me):
             continue
         # An approval summary points at its inline threads, which are checked on their own.
         if APPROVAL_SUMMARY.match(body):
+            continue
+        # A reviewer's "reviewing now" hold is a status note: it asks for nothing and comes off with their review.
+        if HOLD_NOTE.match(body):
             continue
         pos = notes[0].get("position") or {}
         label = LABEL.match(notes[0].get("body", ""))
