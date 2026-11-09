@@ -51,7 +51,7 @@ That prints the Slack timestamp to read from. By default it's the last sweep, or
 
 Read `#collective-mrs` with `slack_read_channel` (`channel_id: C0AKFUXG80J`, `oldest: <that ts>`, `limit: 100`, `response_format: detailed`). Follow `cursor` until there are no more pages. Save every page's `messages` text, concatenated and unchanged, to `<scratchpad>/mr-sweep/channel.txt`.
 
-**A quiet run stops early.** If nothing is new in either room, run the re-review check (step 2) on its own. If its `selected` is empty too, reply with the single line `🧑‍🌾 Mr. Sweep: nothing new` and stop: no shortlist, no page document, no notification, and don't save state. Most sweeps on a timer are quiet, and this keeps each one small.
+**A quiet run stops early.** If nothing is new in either room, run the re-review check (step 2) on its own. If its `selected` is empty too, write the heartbeat (step 9), reply with the single line `🧑‍🌾 Mr. Sweep: nothing new` and stop: no shortlist, no page document, no notification, and don't save state. Most sweeps on a timer are quiet, and this keeps each one small.
 
 ### The priority room, read first
 
@@ -186,6 +186,10 @@ command -v herdr >/dev/null && herdr notification show "🧹 Mr. Sweep" --body "
 ```
 
 For example, the body could be `approved graph-manager!836, changes on engine!1130 · 1 not posted, needs you`. Keep it under 200 characters, with no markdown. A run where nothing happened shows nothing. Never use `PushNotification`: desktop notifications are off.
+
+## 9. Heartbeat
+
+Every run on a timer that got past the gate, quiet ones included, writes one heartbeat. Send it alongside the run's last tool call, as a parallel call in the same message, never as a round trip of its own, since each round trip re-reads the whole session. On a quiet run, that's the message with the re-review check. It's one `ArtifactData` `set` on the **MR Sweep** page: `collection: "beats"`, `doc_id: "b<unix seconds now>"`, no `if_version`, data `{"at": "<ISO 8601 with offset>", "outcome": "<nothing new, or this run's one-line summary>"}`. The page's last-run and next-run line reads it, along with the schedule `/muster` records, so it always says when Mr. Sweep last ran even after a quiet hour. A run typed by hand writes one too.
 
 ## On a timer
 
