@@ -113,7 +113,7 @@ When a stacked MR's base merges, GitLab retargets the MR above to main, and the 
    - Read the original ticket's `parent` with `getJiraIssue`.
    - Run `createJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`, project `COS`, type `Task`) with:
      - `parent`: that epic. If the original ticket has none, leave it out and say so in the report.
-     - `labels`: `["tech-debt", "review-nits", "size-XS"]`.
+     - `labels`: `["follow-up", "tech-debt", "review-nits", "size-XS"]`.
      - assignee: Stephen (`712020:e599b9a1-b952-4c64-979d-71455f943aae`).
      - summary: `[<Area>] | NITs from <repo>!<iid>: <a few words>`, in the board's `[Area] |` style.
      - description: a few lines naming the merged MR and its ticket, then one bullet per NIT with its reviewer and a link to its thread. Say it merged approved, which is why these are follow-up.
@@ -155,7 +155,7 @@ Unless `--no-fix` or `--dry-run`:
    ```
 
    Then scan that MR again with `--only <url>`:
-   - **Agent report has `TICKET THESE:`** → the MR was already approved, so the fixer left minor points alone rather than clear the approvals. Ticket them and open one follow-up MR exactly as in "Approved with only NITs left" (step 2): ticket in the same epic, labels `["tech-debt", "review-nits", "size-XS"]`, assigned to Stephen, one bullet per point with its reviewer and thread link.
+   - **Agent report has `TICKET THESE:`** → the MR was already approved, so the fixer left minor points alone rather than clear the approvals. Ticket them and open one follow-up MR exactly as in "Approved with only NITs left" (step 2): ticket in the same epic, labels `["follow-up", "tech-debt", "review-nits", "size-XS"]`, assigned to Stephen, one bullet per point with its reviewer and thread link.
    - **Agent report has `NEEDS STEPHEN:`** → the MR goes under Needs you, with that line.
    - **MR now `waiting_review`** → it joins step 4 in this run.
    - **Still red, or still `needs_work`** → it goes under Needs you, with the failing job or the thread.
