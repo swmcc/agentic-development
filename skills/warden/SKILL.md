@@ -62,6 +62,22 @@ Jira, cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`, `searchResultMode: "all"` 
 
 Responses truncate around five issues. Where you need the rows rather than the count, page by exclusion (`AND key NOT IN (...)`) until you hold `totalCount` rows. A truncated response looks like a complete one.
 
+## 2b. M1: the clean soak on dev
+
+M1 is the milestone the team is driving to: **a clean shadow soak on dev**. It is not the enforce flip. Keep the two apart everywhere in the report:
+
+- **M1 (the soak)** is the tickets labelled `M1`. Its target is **Tuesday 17 Nov**: every M1 ticket in QA or Done. Even at 24 of 24, M1 is only done when Ryan's soak re-run on dev shows close to zero refusals for real users. The tickets are the means; the soak is the test.
+- **The flip** is [COS-2030](https://whitespaceventures.atlassian.net/browse/COS-2030): shadow to enforce in dev, qa and demo. It comes after a clean soak, and its blockers are its own "is blocked by" links, which only partly overlap M1.
+
+Two JQLs, same fields as section 2:
+
+| Figure | JQL |
+|---|---|
+| M1 tickets | `labels = M1` (rows, not just the count: page by exclusion until you hold `totalCount`) |
+| flip blockers | `issue in linkedIssues("COS-2030", "is blocked by") AND statusCategory != Done` |
+
+From the M1 rows work out: total, Done (Not Required counts), in QA, and **not yet in QA** (named, with status and owner). Compare with the M1 figure in the last report (part 1's M1 line, or the 10:47 status post on 11 Nov: 16 of 24, 67%). Flag the M1 ticket most at risk for Tuesday: a To Do with no owner first, then a To Do that hasn't started. For the soak itself, look in the room since `at` for Ryan's re-run (a date, or a refusal count). If there's none, say the re-run has no date yet; never guess one.
+
 ## 3. MRs in flight
 
 From Slack, since `at`: messages in **#collective-mrs** (`C0AKFUXG80J`) and the room that link a GitLab merge request and name a ticket key. Keep only MRs whose ticket is in the epic: check the keys with one JQL (`key in (...) AND (parent = COS-3789 OR labels = rbac-gbac)`). For each MR, from the message, its reactions and its thread:
@@ -124,6 +140,14 @@ Shape:
 
 ## 📌 Today in brief
 <the two or three sentence summary>
+
+​
+## 🎯 M1, the clean soak on dev
+**M1 tickets: <n>/<m> in QA or Done, <pct>%** (was <pct>% <when>) · <n> Done · <n> in QA · <n> not yet in QA
+• [COS-…](url): <a few words>, <emoji status>, <name>   (one bullet per M1 ticket not yet in QA; mark the one most at risk for Tue 17 Nov)
+**What closes M1:** the tickets are the means and the soak is the test. Once the last ones land on dev, Ryan re-runs the soak; M1 is done when it shows close to zero refusals for real users. <the re-run's date or result if the room has one, else "The re-run has no date yet.">
+**Bottom line:** <one sentence: is Tuesday 17 Nov realistic for the tickets, and on what>
+_The enforce flip ([COS-2030](https://whitespaceventures.atlassian.net/browse/COS-2030)) is a separate, later step: <n> blockers open, <n> in QA. It follows a clean soak._
 
 ​
 ## 🏁 Finished
