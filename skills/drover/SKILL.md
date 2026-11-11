@@ -98,6 +98,13 @@ glab api -X PUT "projects/<url-encoded project>/merge_requests/<iid>/merge" -f s
 2. Otherwise call `getTransitionsForJiraIssue` and pick the transition whose `to.name` is `on_merge`. In COS today, QA is `111` and Done is `31`. Run `transitionJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`).
 3. If the MR has no `on_merge` line, don't guess: report it under Needs you.
 
+**Then wake any release ticket it unblocks.** Some merges need a release by hand afterwards: a release candidate cut and deployed to QA. Those get their own ticket, labelled `release`, which the merged MR's ticket **blocks**. Find them with one JQL: `issue in linkedIssues("<ticket>", "blocks") AND labels = release AND statusCategory = "To Do"`. For each:
+1. Move it to In Progress (`21`).
+2. Add a comment: `<repo>!<iid> merged (<merge commit, short>), so this release is ready to do.`
+3. Send Stephen a Postie DM (`channel_id` `U082BL09HK4`), one per run listing every release ticket woken, e.g. `🚀 <repo>!<iid> merged, so [<release ticket>](url) is ready: cut the rc, deploy it to QA and tell Karim. It's In Progress and assigned to you.` End with the Postie footer.
+
+Put each one under Needs you in the drive and report until it leaves In Progress.
+
 When a stacked MR's base merges, GitLab retargets the MR above to main, and the next run treats it like any other.
 
 **Approved with only NITs left.** A `ready_to_merge` row can carry `nits`: threads labelled **NIT** that nobody has answered. Every reviewer has already approved, so the NITs don't hold the merge; another push, pipeline and re-review round costs more than they're worth. Merge it, move the ticket, then (unless `--no-fix`) take the NITs to **one follow-up MR**:
