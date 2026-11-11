@@ -155,6 +155,7 @@ Unless `--no-fix` or `--dry-run`:
    ```
 
    Then scan that MR again with `--only <url>`:
+   - **Agent report has `TICKET THESE:`** → the MR was already approved, so the fixer left minor points alone rather than clear the approvals. Ticket them and open one follow-up MR exactly as in "Approved with only NITs left" (step 2): ticket in the same epic, labels `["tech-debt", "review-nits", "size-XS"]`, assigned to Stephen, one bullet per point with its reviewer and thread link.
    - **Agent report has `NEEDS STEPHEN:`** → the MR goes under Needs you, with that line.
    - **MR now `waiting_review`** → it joins step 4 in this run.
    - **Still red, or still `needs_work`** → it goes under Needs you, with the failing job or the thread.
