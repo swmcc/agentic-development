@@ -44,10 +44,14 @@ Three places, each with its own job. The ticket is the lasting record, the daily
 **The Drover.** For every message that asks someone for something (not a note or an answer), one shell call:
 
 ```bash
-python3 ~/.claude/skills/drover/scripts/state.py posted <channel id> <message ts> <permalink> --who "<first names asked>" --what "<what I'm after, a few words>"
+python3 ~/.claude/skills/drover/scripts/state.py posted <channel id> <message ts> <permalink> --who "<first names asked>" --what "<what I'm after, a few words>" [<MR url> ...]
 ```
 
+**When the ask is about an MR (review it, re-approve it, look at it), put each MR's full GitLab URL at the end.** Then the ask settles by itself the moment those MRs merge or are approved. Without the URLs, nothing closes it, and a merged MR sits on the Waiting on list for a week.
+
 For an ask posted as a reply in an existing thread, add `--thread <parent ts>`: the thread is read from the parent, and only replies after this one count.
+
+**One ask, one record.** When the same ask goes to two rooms, record only the first post, so it isn't listed twice.
 
 **The ticket.** If the ask is about a Jira ticket, add a comment there with `addCommentToJiraIssue`:
 
