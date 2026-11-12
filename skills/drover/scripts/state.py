@@ -82,18 +82,17 @@ def open_asks(state, scan_path, now=None):
 
 
 def waiting_on(state, scan_path, now=None):
-    """Every ask still out, plus any settled today, newest first, in the shape the page shows."""
+    """Every ask still out, newest first, in the shape the page shows. A settled ask drops off at
+    once: next to live asks, a merged MR still listed reads as if it were waiting."""
     now = now or time.time()
     waiting = waiting_mrs(scan_path)
-    today = datetime.fromtimestamp(now).date()
     rows = []
     for a in state.get("asks", {}).values():
         asking = still_asking(a, waiting, now)
-        settled_today = datetime.fromtimestamp(a.get("done_at") or now).date() == today
-        if not (asking or a.get("pending") or (a.get("done") and settled_today)):
+        if not (asking or a.get("pending")):
             continue
         last = (a.get("replies") or [None])[-1]
-        status = "needs_you" if a.get("pending") else "waiting" if asking and not last else "replied" if asking else "answered"
+        status = "needs_you" if a.get("pending") else "replied" if last else "waiting"
         rows.append({
             "who": a.get("who", ""), "what": a.get("what", ""), "link": a["permalink"],
             "sent": datetime.fromtimestamp(a["sent_at"], timezone.utc).isoformat(), "status": status,
