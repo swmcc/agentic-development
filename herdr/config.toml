@@ -119,6 +119,29 @@ description = "command centre — what is waiting on you right now"
 width = "90%"
 height = "80%"
 
+# My to-do list (swmcc/todo) from the swmcc.todo plugin (herdr-todo): d for "do"
+# opens the list as a popup, shift+a adds a task without opening it. Plugin
+# actions, so they do nothing on a machine without the plugin linked.
+[[keys.command]]
+key = "prefix+d"
+type = "plugin_action"
+command = "swmcc.todo.show"
+description = "my to-do list"
+
+[[keys.command]]
+key = "prefix+shift+a"
+type = "plugin_action"
+command = "swmcc.todo.add"
+description = "add a to-do"
+
+# My calendar from the swmcc.calendar plugin (herdr-calendar): month, week and
+# day views of the macOS Calendar. macOS only, since it reads Calendar.app.
+[[keys.command]]
+key = "prefix+i"
+type = "plugin_action"
+command = "swmcc.calendar.show"
+description = "my calendar"
+
 [theme]
 name = "vesper"
 auto_switch = false
