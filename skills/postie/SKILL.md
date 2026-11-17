@@ -14,7 +14,11 @@ Send the ask in `$ARGUMENTS` as **Postie**, my messenger. It posts from my Slack
 
 ## 2. Draft it in my voice
 
-Read whatever the ask rests on first (the ticket, the thread, the code) so every fact in it is checked. Then write it the way I'd write it to a colleague:
+Read whatever the ask rests on first (the ticket, the thread, the code) so every fact in it is checked.
+
+**An ask about an MR starts from GitLab, never from a summary.** Before drafting, read the MR's approvals and every note on it (`glab api projects/<P>/merge_requests/<iid>/approvals` and `.../notes?sort=asc`), and read them again just before sending, since time passes between the draft and my "yes". If the person has already reviewed it, don't ask them to review it: work through their notes first, then ask for a re-review in reply to their review. If they've approved, there's nothing to ask. People review within minutes of an MR opening, so a report from whoever opened it is already out of date.
+
+Then write it the way I'd write it to a colleague:
 
 - Casual and direct, first person, contractions fine. Open with why I'm asking them in particular.
 - Say what I need in a sentence or two, then the detail: numbers, what breaks, what I've already checked.
