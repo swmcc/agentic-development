@@ -8,7 +8,7 @@ Usage:
                                     superseded  a newer /muster owns the rounds; this session's timers are stale
                                     done        this round's output for the day is already written
 
-Rounds: mr-sweep, drover, wee-standie, washup, plan, muster.
+Rounds: mr-sweep, drover, wee-standie, warden, washup, plan, muster.
 
 The last /muster to run owns the rounds, wherever it ran. Timers in any other session see a token
 that isn't current and switch themselves off, so running /muster again never doubles anything.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 CURRENT = Path.home() / ".cache/muster/current"
 WIKI = Path.home() / "Documents/wiki"
-ROUNDS = {"mr-sweep", "drover", "wee-standie", "washup", "plan", "muster"}
+ROUNDS = {"mr-sweep", "drover", "wee-standie", "warden", "washup", "plan", "muster"}
 
 
 def next_working_day(today):
