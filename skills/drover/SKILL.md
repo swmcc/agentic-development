@@ -118,7 +118,7 @@ When a stacked MR's base merges, GitLab retargets the MR above to main, and the 
      - summary: `[<Area>] | NITs from <repo>!<iid>: <a few words>`, in the board's `[Area] |` style.
      - description: a few lines naming the merged MR and its ticket, then one bullet per NIT with its reviewer and a link to its thread. Say it merged approved, which is why these are follow-up.
    - Move the new ticket to In Progress (`21`).
-2. Start a background fixer with `references/fixer.md`, its **Follow-up** section, the merged MR's row (with `nits`), the merge commit and the **new ticket key**.
+2. Start a background fixer with `references/fixer.md`, its **Follow-up** section, the merged MR's row (with `nits`), the merge commit and the **new ticket key**. Say whether the new ticket is RBAC/GBAC (its epic is `COS-3789`, or it carries the `rbac-gbac` label), so the fixer adds `stevechurch` as a reviewer.
 3. The fixer:
    - branches from main (`--no-track`) and fixes every NIT;
    - opens the follow-up MR, assigned to you, with the NIT authors as reviewers;
