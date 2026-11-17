@@ -2,7 +2,10 @@
 """Turn a read of #collective-mrs into the MRs worth reviewing.
 
 Usage:
-  candidates.py <channel.txt> [--mode mine|all] [--author a,b] [--repo r,s] [--cap 10]
+  candidates.py <channel.txt> [--mode mine|all] [--author a,b [--rest N]] [--repo r,s] [--cap 10]
+
+--rest N keeps 1 in N of everyone else's MRs instead of dropping them all. Which ones is fixed by
+the MR's link, so a bump or a re-read makes the same choice and a skipped MR stays skipped.
 
 <channel.txt> is the text the Slack connector's slack_read_channel returns in its detailed
 format, saved as is. Prints JSON: `selected` (oldest post first, at most --cap), `over_cap`,
@@ -10,7 +13,7 @@ format, saved as is. Prints JSON: `selected` (oldest post first, at most --cap),
 
 Slack can't be read from a shell, so a Claude session fetches the channel and this does the rest.
 """
-import argparse, json, os, re, subprocess, sys, urllib.parse
+import argparse, json, os, re, subprocess, sys, urllib.parse, zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -131,9 +134,15 @@ def _matches(wanted, names):
     return any(n.startswith(w) for w in wanted for n in names)
 
 
+def in_sample(url, every):
+    """A stable 1-in-`every` pick, the same for a link on every run."""
+    return zlib.crc32(url.encode()) % every == 0
+
+
 def skip_reason(m, mr, drafts, opts):
     """Why this MR stays out of the sweep, or None if it goes forward. First reason wins."""
     repo = m.path.rsplit("/", 1)[-1]
+    rest = getattr(opts, "rest", 0)
     checks = [
         (m.bot_template, "template update from Review Bot"),
         (m.struck, "struck through in Slack"),
@@ -145,8 +154,9 @@ def skip_reason(m, mr, drafts, opts):
         ((repo, m.iid) in drafts, "already drafted"),
         (m.url in getattr(opts, "claimed", ()), "review in progress"),
         (opts.repo and repo.lower() not in opts.repo, "not in --repo"),
-        (opts.author and mr and not _matches(opts.author, [m.posted_by, mr["author"], mr["author_name"]]),
-         "not in --author"),
+        (opts.author and mr and not _matches(opts.author, [m.posted_by, mr["author"], mr["author_name"]])
+         and not (rest and in_sample(m.url, rest)),
+         f"outside the 1 in {rest} of others" if rest else "not in --author"),
         (opts.mode == "mine" and mr and ME_GITLAB not in mr["reviewers"] and not m.mentions_me,
          "not asked to review (use all)"),
     ]
@@ -189,6 +199,7 @@ def options(argv):
     p.add_argument("--mode", choices=["mine", "all"], default="mine")
     p.add_argument("--author", default="")
     p.add_argument("--repo", default="")
+    p.add_argument("--rest", type=int, default=0)
     p.add_argument("--cap", type=int, default=10)
     o = p.parse_args(argv)
     o.author = [a.strip().lower() for a in o.author.split(",") if a.strip()]
