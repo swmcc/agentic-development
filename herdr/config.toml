@@ -121,3 +121,21 @@ auto_switch = false
 
 [experimental]
 switch_ascii_input_source_in_prefix = true
+
+[[keys.command]]
+key = "prefix+d"
+type = "plugin_action"
+command = "swmcc.todo.show"
+description = "my to-do list"
+
+[[keys.command]]
+key = "prefix+shift+a"
+type = "plugin_action"
+command = "swmcc.todo.add"
+description = "add a to-do"
+
+[[keys.command]]
+key = "prefix+i"
+type = "plugin_action"
+command = "swmcc.calendar.show"
+description = "my calendar"
