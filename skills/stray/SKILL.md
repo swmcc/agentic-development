@@ -1,7 +1,7 @@
 ---
 name: stray
-description: Let my open MRs into #collective-mrs the way the team posts them, one line per MR, signed by a stray cow from a herd named after the team, so somebody herds them home for review. RBAC/GBAC ones also go into #rbacgbacdev. Shows the message and sends only on my word. Use when the user types /stray, or asks to post, share or put their MRs up for review in #collective-mrs, or when /raise-mr has just opened an MR.
-argument-hint: "[MR links] [--drafts]"
+description: Let my open MRs into #collective-mrs the way the team posts them, one line per MR, signed by a stray cow from a herd named after the team, so somebody herds them home for review. RBAC/GBAC ones also go into #rbacgbacdev. Shows the message and sends only on my word, unless /raise-mr passes --send. Use when the user types /stray, or asks to post, share or put their MRs up for review in #collective-mrs, or when /raise-mr has just opened an MR.
+argument-hint: "[MR links] [--drafts] [--send]"
 ---
 
 🐄 Post my MRs for review in **#collective-mrs** (`C0AKFUXG80J`), in the shape most of the team uses, signed by a stray cow. Only my MRs, never anyone else's.
@@ -42,6 +42,8 @@ The post opens with the cow's line (`🦬 **Dylan McMoorley has wandered in with
 ## 4. Show it, then stop
 
 Show both messages and where each is going. Send only when I say so. If I change the wording, send my version.
+
+**`--send`** is how `/raise-mr` calls it for an MR it has just opened, and I've said that may post without asking. Go straight to step 5, then show what went out with the links. Every other rule still holds: never a draft unless `--drafts`, and nothing already posted and unchanged.
 
 ## 5. Send and record
 
