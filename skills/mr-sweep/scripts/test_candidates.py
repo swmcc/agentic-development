@@ -105,6 +105,23 @@ class SweepTest(unittest.TestCase):
         self.assertEqual(picked(out), [("graph-manager", 832), ("graph-manager", 833)])
         self.assertEqual(why[("frontend", 1624)], "not in --author")
 
+    def test_rest_keeps_a_stable_sample_of_other_authors(self):
+        from candidates import in_sample
+        others = [m for m in mentions(parse(CHANNEL)) if not m.struck and m.iid not in (824, 832, 833)]
+        opts = SimpleNamespace(mode="all", author=["lee"], repo=[], cap=6, rest=5)
+        out = sweep(parse(CHANNEL), lambda p, i: GITLAB.get((p, i)), set(), opts)
+        kept = {r["url"] for r in out["selected"]}
+        for m in others:
+            self.assertEqual(m.url in kept, in_sample(m.url, 5), m.url)
+        why = {r["url"]: r["skip_reason"] for r in out["skipped"]}
+        self.assertTrue(all(why[m.url] == "outside the 1 in 5 of others" for m in others if m.url not in kept))
+        self.assertTrue({f"{GM}/832", f"{GM}/833"} <= kept)
+
+    def test_rest_of_one_keeps_everyone(self):
+        opts = SimpleNamespace(mode="all", author=["lee"], repo=[], cap=6, rest=1)
+        out = sweep(parse(CHANNEL), lambda p, i: GITLAB.get((p, i)), set(), opts)
+        self.assertIn(("frontend", 1622), picked(out))
+
     def test_repo_filter_matches_the_last_path_segment(self):
         out, why = run(mode="all", repo=["frontend"])
         self.assertEqual(picked(out), [("frontend", 1622), ("frontend", 1624)])

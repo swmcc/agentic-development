@@ -1,7 +1,7 @@
 ---
 name: mr-sweep
 description: Pick up the merge requests people have posted in the #collective-mrs Slack channel since the last sweep, review them with /review-mr, and post each review with its verdict, without opening collie and without holding anyone's merge. Filters by author and repo. Use when the user types /mr-sweep, or asks to review what's been posted in collective-mrs, sweep the MR channel, or pick up new MRs from Slack.
-argument-hint: "[--round <token>] [all] [--author a,b] [--repo r,s] [--days N] [--cap N] [--no-post] [MR link...]"
+argument-hint: "[--round <token>] [all] [--author a,b] [--rest N] [--first a,b] [--repo r,s] [--days N] [--cap N] [--no-post] [MR link...]"
 ---
 
 🧑‍🌾 **Mr. Sweep**: *Collie rounds them up. Mr. Sweep sees them through.* `mr-sweep` reads as Mr. Sweep, the shepherd who directs collie, the sheepdog.
@@ -22,6 +22,8 @@ Collie can't do this part itself, because only a Claude session can read Slack. 
 | *(none)* | MRs where I'm a requested reviewer, or where the post mentions me |
 | `all` | every open MR that survives the filters, whether or not I'm a reviewer |
 | `--author lee,ryan` | only MRs by these people: a case-insensitive prefix of the Slack poster's name or the GitLab author |
+| `--rest 5` | with `--author`, also take 1 in 5 of everyone else's MRs instead of none. The pick is fixed by the MR's link, so a bump never changes it |
+| `--first steve` | these authors' MRs go ahead of everything else, the priority room and re-reviews included (see step 2) |
 | `--repo graph-manager,frontend` | only MRs in these repos (the project's last path segment) |
 | `--days N` | read N days back instead of only what's new since the last sweep |
 | `--cap N` | at most N reviews this run (default 10); the rest are listed, not dropped |
@@ -29,6 +31,8 @@ Collie can't do this part itself, because only a Claude session can read Slack. 
 | MR links | skip Slack and review exactly these links: go straight to step 4 |
 
 They combine: `/mr-sweep all --author lee --repo graph-manager` takes every new graph-manager MR from Lee.
+
+The `/muster` timer runs `all --author steve,ryan,paddy --rest 5 --first steve`: every MR from Steve Church, Ryan Wilson and Paddy McDermott, 1 in 5 from anyone else, Steve's before all else.
 
 ## 0. On a timer, the gate comes first
 
@@ -65,12 +69,14 @@ The room is mostly Jira notices and chat. Only messages that link a GitLab MR ma
 
 ## 2. Pick out the candidates
 
+**With `--first`, those authors go first.** Before anything below, run each room and the re-review check with `--author <the --first names>` (no `--rest`) and the full cap, and claim what each selects (step 4), so they take the first places. The steps below then run with the cap that's left, and skip the claimed MRs as "review in progress". Don't save state from this pass; the normal pass below sets it. With no cap left, still run the normal pass with `--cap 0`, so its `resume_ts` keeps everything else for next time.
+
 Run the priority room first. Claim its `selected` straight away (step 4), then run #collective-mrs with the cap that's left, so the priority room's MRs take the first places and the claims stop either list picking an MR twice:
 
 ```bash
-python3 $S/candidates.py <scratchpad>/mr-sweep/priority.txt [--mode all] [--author ...] [--repo ...] [--cap N] > <scratchpad>/mr-sweep/priority.json
+python3 $S/candidates.py <scratchpad>/mr-sweep/priority.txt [--mode all] [--author ...] [--rest N] [--repo ...] [--cap N] > <scratchpad>/mr-sweep/priority.json
 python3 $S/state.py claim <priority selected urls>
-python3 $S/candidates.py <scratchpad>/mr-sweep/channel.txt [--mode all] [--author ...] [--repo ...] --cap <N minus priority selected> > <scratchpad>/mr-sweep/candidates.json
+python3 $S/candidates.py <scratchpad>/mr-sweep/channel.txt [--mode all] [--author ...] [--rest N] [--repo ...] --cap <N minus priority selected> > <scratchpad>/mr-sweep/candidates.json
 ```
 
 If the priority room fills the cap, skip the second run; #collective-mrs keeps its place and is read again next time. Pass `--mode all` only when the argument `all` was given. The script removes duplicate links, so a bump counts once. It checks each MR against GitLab and against my existing drafts, and drops anything that is:
@@ -81,14 +87,14 @@ If the priority room fills the cap, skip the second run; #collective-mrs keeps i
 - mine
 - already approved by me
 - already drafted
-- outside the filters
+- outside the filters (or, with `--rest`, outside the 1 in N kept from everyone else)
 
 ### Re-reviews: MRs that changed since my review
 
-Every sweep also looks for open MRs I've reviewed that have changed since and that I haven't approved (or whose approval dropped when they changed, which leaves them as stuck as a block). This comes from GitLab, not from Slack, so it runs even when neither room has anything new:
+Every sweep also looks for open MRs I've reviewed that have changed since and that I haven't approved (or whose approval dropped when they changed, which leaves them as stuck as a block). Re-reviews ignore `--author` and `--rest`: an MR I've reviewed is seen through whoever wrote it, since a CHANGES verdict of mine blocks it until I look again. `--first` still puts its authors' re-reviews first. This comes from GitLab, not from Slack, so it runs even when neither room has anything new:
 
 ```bash
-python3 $S/rereview.py [--author ...] [--repo ...] --out <scratchpad>/rereview > <scratchpad>/mr-sweep/rereview.json
+python3 $S/rereview.py [--repo ...] --out <scratchpad>/rereview > <scratchpad>/mr-sweep/rereview.json
 ```
 
 It compares what each MR changes now against what it changed when I last commented, each against its own base. A rebase that changes nothing is left alone; new commits, an amend or a force-push come back. Each `selected` row carries the version I reviewed and the current one, and `--out` saves both versions' diffs.
@@ -193,4 +199,4 @@ Every run on a timer that got past the gate, quiet ones included, writes one hea
 
 ## On a timer
 
-`/muster` runs it hourly in working hours. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
+`/muster` runs it hourly in working hours, as `all --author steve,ryan,paddy --rest 5 --first steve`. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
