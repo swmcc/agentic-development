@@ -1,6 +1,6 @@
 ---
 name: warden
-description: The Warden, RBAC/GBAC's end-of-day report to #rbacgbacdev. How far the epic COS-3789 moved since the last report (% done then and now), what finished, what's in flight, what's new, which MRs went up or got reviewed, and the work with no ticket (Confluence pages, Postie asks, Karim's test work, decisions and ways of working agreed in the room). Runs unattended at 16:15 as a cloud routine. Use when the user types /warden, or asks for today's RBAC/GBAC report or digest, or "what moved on RBAC today".
+description: The Warden, RBAC/GBAC's end-of-day report to #rbacgbacdev. How far the epic COS-3789 moved since the last report (% done then and now), what finished, what's in flight, what's new, which MRs went up or got reviewed, and the work with no ticket (Confluence pages, Postie asks, Karim's test work, decisions and ways of working agreed in the room). Runs unattended at 16:15 as a cloud routine; its 09:30 morning round (`--morning`) runs locally from /muster so it can check GitLab. Use when the user types /warden, or asks for today's RBAC/GBAC report or digest, or "what moved on RBAC today".
 argument-hint: "[--draft] [--morning]"
 ---
 
@@ -8,9 +8,11 @@ argument-hint: "[--draft] [--morning]"
 
 Epic **COS-3789**, room **#rbacgbacdev** (`C0CB4EKSHDW`). `--draft` shows the report and posts nothing.
 
-It must run with nobody at the keyboard: everything below uses only the Jira, Confluence and Slack connectors. No local files, no `glab`, no vault.
+The 16:15 report must run with nobody at the keyboard: sections 1 to 6 use only the Jira, Confluence and Slack connectors. No local files, no `glab`, no vault.
 
-**The cloud routine carries its own copy of these instructions** ([routine](https://claude.ai/code/routines/trig_019BRuNTxoH7af6g9X7LwwFC)), because the cloud can't read this laptop. Change both together.
+**The cloud routine carries its own copy of sections 1 to 6** ([routine](https://claude.ai/code/routines/trig_019BRuNTxoH7af6g9X7LwwFC)), because the cloud can't read this laptop. Change both together.
+
+The morning round (section 7) is different: it runs locally as a `/muster` timer, because it has to check GitLab with `glab` before chasing anyone about an MR. The repos are private, so the cloud can't see a review or an approval, and it kept paging people who had already done the review. Its old cloud routine (`trig_01YYvaTqbmp9QN3hPvRj1JGT`) is switched off.
 
 ## The team
 
@@ -220,14 +222,23 @@ If Jira or Slack failed outright, post nothing and say why: a report with a sile
 
 ## 7. The morning round (`--morning`)
 
+**The timer gate.** When the prompt carries `--round <token>` (a `/muster` timer), first run `python3 ~/.claude/skills/muster/scripts/round.py gate warden <token>`. Only `go` carries on. On `superseded`, `CronDelete` every job in this session whose prompt carries that token, reply `📯 superseded by a newer /muster: timers here removed`, and stop. Run by hand, skip this. Step 2 below still stops a second round on the same day.
+
 At 09:30 the next working day, the Warden goes back to its last report and chases what it was waiting on. Once per question: a question gets one morning nudge, the day after it first appears. After that it stays on the 16:15 report with its "since" date, so its age is visible without anyone being pinged daily.
 
 **The round chases every unanswered Postie ask from the previous working day, as well as the report's Waiting on lines, in one post.** Postie asks are the main job. Search `"Sent by Postie"` from Stephen on that day, keep the ones that ask someone for something (not notes or answers), merge the copies posted to both #collective-mrs and #rbacgbacdev, and check each the same way as a Waiting on line below. For an ask sent by DM, say what it's about and "(asked by DM)", with no link. Every `asked` link is the exact permalink the search returned, never one you build yourself.
 
 1. Find the latest report with the same search as section 1 (the marker line). The thread to reply in is part 1's: the search result's `thread_ts`. If it's more than three days old, still chase the Postie asks, posting top-level in the room.
-2. Take its *Waiting on* lines whose "since" date is the report's own date. Older ones have had their nudge.
-3. For each, check whether it's been answered since the report: a reply from that person in the report's thread or in the `asked` thread, a later message from them in the same DM or channel as the ask, or a comment from them on the linked ticket. Read the replies; a reply that answers counts, an "I'll look" doesn't.
-4. If anything is still open, post **one** reply in the report's thread, with `reply_broadcast: true` so it also shows in the room. A reply left only in the thread goes unseen: nobody opens yesterday's report, and it posts as Stephen, so he gets no notification of his own. Each person is mentioned once, with their questions under them:
+2. If that thread already has a `🗝️ *Morning round` reply from today, stop: one round a day.
+3. Take its *Waiting on* lines whose "since" date is the report's own date. Older ones have had their nudge.
+4. For each, check whether it's been answered since the report: a reply from that person in the report's thread or in the `asked` thread, a later message from them in the same DM or channel as the ask, or a comment from them on the linked ticket. Read the replies; a reply that answers counts, an "I'll look" doesn't.
+5. **Any ask about a GitLab MR (a review, a re-review, an approval, a merge) is checked in GitLab before anyone is chased.** Slack rarely shows the answer: people say "looking now" and then do the review in GitLab. For each MR link in the ask (`gitlab.com/<path>/-/merge_requests/<iid>`, with the path URL-encoded as `<P>`):
+   - `glab api projects/<P>/merge_requests/<iid>`: if `state` is `merged` or `closed`, the ask is answered ("merged", "closed").
+   - `glab api projects/<P>/merge_requests/<iid>/approvals`: if the person asked is in `approved_by` (match on `user.name`), it's answered ("approved").
+   - `glab api "projects/<P>/merge_requests/<iid>/notes?sort=desc&per_page=100"`: if they left notes there since the ask (`author.name`, `created_at` after the ask, `system: false`), it's answered ("reviewed, <n> comments"). Stephen's own notes don't count.
+
+   Only when none of these show anything is the MR ask still open. If `glab` fails, say so in the post and chase only the asks that aren't about an MR. Never guess.
+6. If anything is still open, post **one** reply in the report's thread, with `reply_broadcast: true` so it also shows in the room. A reply left only in the thread goes unseen: nobody opens yesterday's report, and it posts as Stephen, so he gets no notification of his own. Each person is mentioned once, with their questions under them:
 
 ```
 🗝️ *Morning round:* still waiting on these from yesterday.
