@@ -37,8 +37,11 @@ def washup_written(today):
     m = re.search(r"^## 📊 End of Day Summary\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
     if not m:
         return False
-    # The template leaves only an HTML comment here until /washup writes the section.
-    return bool(re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S).strip())
+    # The template leaves an HTML comment and empty ### headings here until /washup
+    # writes the section, so neither counts as written.
+    body = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S)
+    body = re.sub(r"^#+ .*$", "", body, flags=re.M)
+    return bool(body.strip())
 
 
 def plan_written(today):
