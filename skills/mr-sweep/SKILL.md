@@ -199,4 +199,4 @@ Every run on a timer that got past the gate, quiet ones included, writes one hea
 
 ## On a timer
 
-`/muster` runs it hourly in working hours, as `all --author steve,ryan,paddy --rest 5 --first steve`. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
+`/muster` runs it every 15 minutes in working hours, as `all --author steve,ryan,paddy --rest 5 --first steve`. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
