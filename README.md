@@ -98,6 +98,8 @@ symlinks them into `~/.claude/skills`.
 | `dependabot-automerge` | Set up, audit, or fix Dependabot auto-merge so patch/minor merge only after tests pass and majors never do |
 | `sitrep` | Read the command centre and say what actually needs you — the judgement layer over `c2` |
 | `postie` | Send a Slack ask on my behalf, drafted in my voice and sent only once I say so, signed as Postie |
+| `sweep` | Pick who reviews an MR from the Sweep family below, and run it |
+| `test-plan` | Write the "QA by tests" plan on a ticket from its merged MR: each acceptance criterion mapped to the test that proves it, real counts on main, revert proof, then label it `needs-native-tests`. The Drover runs it on every merge on the RBAC/GBAC epic |
 
 Audit any repo without changing it:
 
@@ -105,6 +107,31 @@ Audit any repo without changing it:
 skills/dependabot-automerge/audit.sh swmcc/second_breakfast
 skills/dependabot-automerge/audit.sh --dir ~/Code
 ```
+
+### The Sweep family
+
+Review agents that work to the same written review standards and the same
+blocking rules. They differ in what they look at hardest and how they say it.
+Every MR gets one review with one verdict.
+
+| Skill | Who | Job |
+|-------|-----|-----|
+| `mr-sweep` | 🧑‍🌾 Mr. Sweep | The default. Runs the review rounds every 15 minutes |
+| `dr-sweep` | 🧑‍⚕️ Dr. Sweep, his evil twin | Leads in the core repos: reads every changed file whole, runs the tests, checks the MR description against the code |
+| `sergeant-sweep` | 👮 Sergeant Sweep, the cousin in the police | Security consult: traces each access-control change from the caller to the gate to the audit row |
+| `prof-sweep` | 🧑‍🏫 Prof. Sweep, the academic uncle | Tests consult: maps each acceptance criterion to a test and checks the tests fail without the fix |
+| `granny-sweep` | 👵 Granny Sweep | Signs for the more junior members of the team, explaining the why behind every comment; anyone else gets her 1 time in 5 |
+
+`/sweep` picks the lead (Dr. in collective-engine, collective-engine-api and
+graph-manager, Mr. everywhere else), calls in Sergeant or Prof. when the diff
+needs them, and decides who signs. The Sergeant and the Prof. never review on
+their own unless called by name. `mr-sweep`'s rounds use the same table.
+
+Each persona keeps notes on the people it reviews (`patients.md`,
+`suspects.md`, `class-list.md`, `grandchildren.md`) and `sweep/juniors.md`
+lists who gets Granny by default. They're gitignored: they name colleagues and
+this repo is public. A fresh machine needs them copied over, or the Sweeps fall
+back to a neutral, friendly tease for everyone.
 
 ## C2
 
