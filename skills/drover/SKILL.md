@@ -98,6 +98,8 @@ glab api -X PUT "projects/<url-encoded project>/merge_requests/<iid>/merge" -f s
 2. Otherwise call `getTransitionsForJiraIssue` and pick the transition whose `to.name` is `on_merge`. In COS today, QA is `111` and Done is `31`. Run `transitionJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`).
 3. If the MR has no `on_merge` line, don't guess: report it under Needs you.
 
+**Then write its test plan.** If the ticket is on the RBAC/GBAC epic (parent `COS-3789` or label `rbac-gbac`), start a background agent that follows `~/.claude/skills/test-plan/SKILL.md` with `<ticket> --post`. It runs the MR's tests on main, posts the "QA by tests" plan on the ticket and adds `needs-native-tests`. Put its comment link in the MR's row `note` when it reports, and any ❌ or ⚠️ on a core behaviour under Needs you. Skip it with `--dry-run`.
+
 **Then wake any release ticket it unblocks.** Some merges need a release by hand afterwards: a release candidate cut and deployed to QA. Those get their own ticket, labelled `release`, which the merged MR's ticket **blocks**. Find them with one JQL: `issue in linkedIssues("<ticket>", "blocks") AND labels = release AND statusCategory = "To Do"`. For each:
 1. Move it to In Progress (`21`).
 2. Add a comment: `<repo>!<iid> merged (<merge commit, short>), so this release is ready to do.`
@@ -253,4 +255,4 @@ Every run that got past the gate, quiet ones included, writes one heartbeat. Sen
 
 ## On a timer
 
-`/muster` runs it every half hour in working hours. `/loop 30m /drover` does the same by hand in a session left open, like Mr. Sweep. A run only acts on what changed: claims stop overlapping runs working the same MR, and the asked-at-this-head record stops a reviewer being pinged twice for the same push.
+`/muster` runs it every 15 minutes in working hours. `/loop 30m /drover` does the same by hand in a session left open, like Mr. Sweep. A run only acts on what changed: claims stop overlapping runs working the same MR, and the asked-at-this-head record stops a reviewer being pinged twice for the same push.
