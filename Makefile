@@ -34,7 +34,7 @@ all: install setup ## Install everything and configure
 install: install-herdr install-spreader install-lazygit ## Install all dependencies
 
 .PHONY: setup
-setup: setup-config setup-hooks setup-skills setup-souls setup-workspaces setup-thrawn setup-c2 ## Configure herdr with this repo's settings
+setup: setup-config setup-hooks setup-skills setup-souls setup-workspaces setup-c2 ## Configure herdr with this repo's settings
 
 # ============================================================================
 # 📦 Installation
@@ -194,21 +194,6 @@ repos-local: ## Generate a machine-local repo list by scanning CODE_DIR
 	@echo ""
 	@echo "$(YELLOW)Review $(LOCAL_REPOS), then run 'make setup-workspaces'$(RESET)"
 
-.PHONY: setup-thrawn
-setup-thrawn: ## Install the thrawn orchestrator CLI
-	@echo "$(GREEN)Setting up thrawn...$(RESET)"
-	@mkdir -p $(HOME)/.local/bin $(HOME)/bin
-	@chmod +x $(REPO_DIR)/thrawn/bin/thrawn
-	@ln -sf $(REPO_DIR)/thrawn/bin/thrawn $(HOME)/.local/bin/thrawn
-	@ln -sf $(REPO_DIR)/thrawn/bin/thrawn $(HOME)/bin/thrawn
-	@echo "$(GREEN)thrawn linked:$(RESET)"
-	@echo "  $(YELLOW)~/.local/bin/thrawn$(RESET)"
-	@echo "  $(YELLOW)~/bin/thrawn$(RESET)"
-	@case ":$$PATH:" in \
-		*":$(HOME)/.local/bin:"*) ;; \
-		*) echo "$(RED)~/.local/bin is not on your PATH — add it to your shell rc$(RESET)" ;; \
-	esac
-
 .PHONY: setup-c2
 setup-c2: ## Install the C2 command centre CLI
 	@echo "$(GREEN)Setting up C2...$(RESET)"
@@ -217,20 +202,6 @@ setup-c2: ## Install the C2 command centre CLI
 	@ln -sf $(REPO_DIR)/c2/bin/c2 $(HOME)/.local/bin/c2
 	@echo "  $(YELLOW)~/.local/bin/c2$(RESET)  — also bound to prefix+c in herdr"
 	@$(REPO_DIR)/c2/bin/c2 doctor || true
-
-# ============================================================================
-# 🧪 Testing
-# ============================================================================
-
-.PHONY: test
-test: ## Run the thrawn test suite (pytest)
-	@echo "$(GREEN)Running thrawn tests...$(RESET)"
-	@python3 -m pytest thrawn/tests -q --basetemp=.pytest-tmp
-
-.PHONY: lint
-lint: ## Lint thrawn with ruff
-	@echo "$(GREEN)Linting thrawn...$(RESET)"
-	@ruff check thrawn/bin/thrawn thrawn/tests
 
 # ============================================================================
 # 🔄 Updates
@@ -272,6 +243,7 @@ unlink: ## Remove all symlinks (keeps tools and machine-local configs)
 	@rm -f $(CODEX_DIR)/herdr-agent-state.sh
 	@for s in $(REPO_DIR)/skills/*/; do rm -f $(CLAUDE_SKILLS_DIR)/$$(basename "$$s"); done
 	@rm -f $(HOME)/.claude/souls
+	@# thrawn is retired; these rm lines still clear symlinks older setups made.
 	@rm -f $(HOME)/.local/bin/thrawn
 	@rm -f $(HOME)/bin/thrawn
 	@echo "$(GREEN)Symlinks removed$(RESET)"
@@ -315,10 +287,6 @@ status: ## Show installation status
 	@echo ""
 	@echo "$(YELLOW)Skills:$(RESET)"
 	@printf "  dependabot:     "; [ -L $(CLAUDE_SKILLS_DIR)/dependabot-automerge ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
-	@echo ""
-	@echo "$(YELLOW)Thrawn:$(RESET)"
-	@printf "  thrawn CLI:     "; [ -L $(HOME)/.local/bin/thrawn ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
-	@printf "  thrawn ~/bin:   "; [ -L $(HOME)/bin/thrawn ] && echo "$(GREEN)linked$(RESET)" || echo "$(RED)not linked$(RESET)"
 
 # ============================================================================
 # 📖 Help
