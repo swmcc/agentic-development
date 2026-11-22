@@ -27,8 +27,7 @@ make status
 | `c2/` | 🛰 Command centre — one view of what is waiting on you, bound to `prefix+shift+c` |
 | `herdr/` | [Herdr](https://herdr.dev) terminal multiplexer configuration |
 | `skills/` | Claude Code skills, symlinked into `~/.claude/skills` |
-| `souls/` | 🎭 Character roster for agents — one file per persona, consumed by thrawn, `~/.claude/agents` wrappers and `/soul` |
-| `thrawn/` | ⚔ Parallel agent orchestrator — plan with fable, execute with opus/haiku/codex/local in worktrees |
+| `souls/` | 🎭 Character roster for agents — one file per persona, consumed by `~/.claude/agents` wrappers and `/soul` |
 | `Makefile` | Installation and setup automation |
 
 ## What's Herdr?
@@ -123,19 +122,15 @@ CLI and are collected by `/sitrep`, which also does the reasoning.
 
 See [c2/README.md](c2/README.md).
 
-## Thrawn
+## Thrawn (retired)
 
-Give it a ticket, get a PR:
-
-```bash
-thrawn 123                       # plan (fable) → parallel agents in worktrees → merge → green
-thrawn status                    # the board, with ship code when green
-thrawn ship gh-123 --code 482913 # push + PR/MR (gated behind the code)
-```
-
-See [thrawn/README.md](thrawn/README.md).
+Thrawn, the parallel agent orchestrator, was retired in November 2026. A plan
+file, the coding agent's own subagents and herdr do the job now. The code is
+frozen on the [`thrawn-archive`](https://github.com/swmcc/agentic-development/tree/thrawn-archive/thrawn)
+branch, at the last commit before it was deleted. The why is in
+[Retiring Thrawn](https://swm.cc/writing/retiring-thrawn).
 
 ## See Also
 
 - [herdr/README.md](herdr/README.md) - Detailed herdr configuration docs
-- [thrawn/README.md](thrawn/README.md) - Parallel agent orchestrator
+- [thrawn-archive](https://github.com/swmcc/agentic-development/tree/thrawn-archive/thrawn) - The retired orchestrator, frozen

@@ -1,17 +1,13 @@
 # Souls
 
 One markdown file per character. A soul is the single source of truth for
-who a character is, consumed three ways:
+who a character is, consumed two ways:
 
-1. **Thrawn**: the `[personas]` table in `thrawn/runners.toml` maps a
-   pipeline stage to a soul (`planner = "tactician"`). The file's text is
-   injected at the top of that stage's prompt for whichever runner
-   executes it, claude, codex, pi or local alike.
-2. **Interactive agents**: files in `~/.claude/agents/` become thin
+1. **Interactive agents**: files in `~/.claude/agents/` become thin
    wrappers, frontmatter for tools and model plus an instruction to read
    their soul from `~/.claude/souls/<name>.md` (a symlink to this
    directory, created by `make setup-souls`).
-3. **Any session**: the `/soul <name>` skill loads a character into an
+2. **Any session**: the `/soul <name>` skill loads a character into an
    ordinary Claude Code conversation.
 
 ## Writing a soul
@@ -21,7 +17,7 @@ who a character is, consumed three ways:
   Elixir bugs come from catching errors OTP wanted to crash on; I flag
   every defensive rescue until proven wrong" beats "check error
   handling".
-- **Plain, harness-agnostic text.** No tool names, no thrawn-isms, no
+- **Plain, harness-agnostic text.** No tool names, no harness-isms, no
   Claude-specific instructions. The same words must work inside a codex
   pane where none of that machinery exists. Anything mechanical belongs
   in the wrapper or the pipeline template, never in the soul.
