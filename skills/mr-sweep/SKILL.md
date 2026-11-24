@@ -115,6 +115,8 @@ python3 $S/state.py claim <url> <url> ...
 
 Run `/review-mr --no-hold <url> <url> ...` with the selected links (or the links given as arguments). For more than one link it follows its own "Several MRs at once" flow: overlap groups, one agent per group in parallel, a draft per MR. Take its report, then carry on here instead of waiting for me to say "post". For this sweep, the request to post has already been given.
 
+**Pick the Sweep for each MR.** Before starting the reviews, run `~/.claude/skills/sweep/SKILL.md` steps 1 to 4 on every selected MR, including its cap of three test-running reviews per round (the rest are released from their claim and wait for the next round). Name the lead and any consults in the shortlist (`🧑‍⚕️ Dr. + 👮`, `🧑‍🌾 Mr. + 🧑‍🏫`, `👵 Granny voice`). Each MR's review agent follows the lead's steps 1 and 2 with the consults' extras added. A draft signed by any persona other than Mr. Sweep already carries its sign-off, so in step 5 don't run `sign.py` on it. Everything else (no hold, posting, Slack replies, the log) stays this round's.
+
 ## 5. Post each review
 
 Unless `--no-post` was given, post the drafts one MR at a time, in the order the reviews finished. Sign each draft first, so the author knows an agent wrote it:
@@ -199,4 +201,4 @@ Every run on a timer that got past the gate, quiet ones included, writes one hea
 
 ## On a timer
 
-`/muster` runs it hourly in working hours, as `all --author steve,ryan,paddy --rest 5 --first steve`. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.
+`/muster` runs it every 15 minutes in working hours, as `all --author steve,ryan,paddy --rest 5 --first steve`. `/loop 1h /mr-sweep` does the same by hand in a session left open; anything tighter mostly buys quiet runs. Each run only sees what's new, and the cap keeps a big bump from turning into twenty reviews at once.

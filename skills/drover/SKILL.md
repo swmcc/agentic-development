@@ -73,6 +73,7 @@ Every Postie ask is tracked here, not just the Drover's own re-review asks: Post
 |---|---|
 | Approved, looked, done, "on it", "after lunch", "back Thursday" | Nothing to act on. Record it with `state.py replied <ask ts> <reply ts> <who> <reply permalink> "<gist>"`, so Waiting on shows it, and put its gist in that MR's row `note`, e.g. `Steve: looking after lunch`. GitLab shows an approval on the next scan. |
 | An answer to what a non-MR ask wanted | `state.py replied ...` as above. Once everyone it asked has answered, or the one answer settles it, `state.py done <ask ts>`. |
+| An answer that settles a ticket's open question, and/or asks for a follow-on ticket ("fine for now", "can we add a ticket to…"), from the person the ask was put to | Act on it, in this order:<br>1. **Record the decision** on the ticket the ask names: one `addCommentToJiraIssue`, `**<Name> replied (<d Mon>, <HH:MM>):** <their answer, in a sentence or two>. [Reply](<permalink>)`.<br>2. **Raise the follow-on ticket** if they asked for one: `createJiraIssue` (project `COS`, type `Task`) in the same epic as the asked ticket (read its `parent`), assigned to Stephen, labels `["follow-up"]` plus the asked ticket's epic and area labels (`rbac-gbac`, `rbac-*`, `M1`/`M2`; never `review-nits` or `tech-debt`, which describe the asked ticket, not new work). Summary in the board's `[Area] \| …` style; description quotes what they asked for, links their reply and the asked ticket, and ends with a short **Done when**. Leave it in To Do. Link it to the asked ticket (`createIssueLink`, "relates to").<br>3. **Reply in their thread** as Postie: one or two lines saying the decision is on the ticket and the follow-on is raised, both linked, ending with the Postie footer.<br>4. `state.py replied …`, then `state.py done <ask ts>`.<br>If the reply asks for more than one new piece of work, is unclear about what's wanted, or comes from someone the ask wasn't put to, treat it as the row below instead. A request for something with no Slack text (an image, a file) gets a ticket that says what was shared and links the reply; never describe an image you can't see. |
 | A question, a review point made in Slack, "ask someone else", "fine, merge it" without approving on GitLab, a disagreement | Record it with `state.py pending <ask ts> <reply ts> <mr url, or - for a non-MR ask> <who> <reply permalink> "<gist>"`. It goes under **Needs you** until Stephen answers. Never act on it alone: never merge on a Slack word, and never add reviewers. |
 
 After each thread, record what was read: `state.py seen <ask ts> <newest reply ts>`. For a pending reply, if Stephen has since replied in that thread, run `state.py clear <ask ts> <reply ts>`.
@@ -94,9 +95,13 @@ glab api -X PUT "projects/<url-encoded project>/merge_requests/<iid>/merge" -f s
 ```
 
 **Then move its ticket in the same step.**
-1. Read the ticket's status. If it's already where the MR's `on_merge` says (`QA` or `Done`), leave it and say so.
-2. Otherwise call `getTransitionsForJiraIssue` and pick the transition whose `to.name` is `on_merge`. In COS today, QA is `111` and Done is `31`. Run `transitionJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`).
+1. Read the ticket's status. If it's already where the MR's `on_merge` says (`QA`, `Done` or `In Progress`), leave it and say so.
+2. Otherwise call `getTransitionsForJiraIssue` and pick the transition whose `to.name` is `on_merge`. In COS today, QA is `111`, Done is `31` and In Progress is `21`. Run `transitionJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`).
 3. If the MR has no `on_merge` line, don't guess: report it under Needs you.
+
+**`In Progress` means the MR is one part of its ticket.** `/raise-mr` writes it when the diff doesn't cover every acceptance criterion. The ticket stays open, and the MR's description says what it covers and what it leaves. On merge, don't move the ticket to QA and don't write a test plan, because a plan on an unfinished ticket only lists the work left as ❌. Instead, add one comment to the ticket: `<repo>!<iid> merged (<merge commit, short>): covers <…>; still to do: <…>`, taken from the description. The test plan comes when the MR that finishes the ticket merges with `On merge: … to QA`.
+
+**Then write its test plan.** If the ticket is on the RBAC/GBAC epic (parent `COS-3789` or label `rbac-gbac`), start a background agent that follows `~/.claude/skills/test-plan/SKILL.md` with `<ticket> --post`. It runs the MR's tests on main, posts the "QA by tests" plan on the ticket and adds `needs-native-tests`. Put its comment link in the MR's row `note` when it reports, and any ❌ or ⚠️ on a core behaviour under Needs you. Skip it with `--dry-run`.
 
 **Then wake any release ticket it unblocks.** Some merges need a release by hand afterwards: a release candidate cut and deployed to QA. Those get their own ticket, labelled `release`, which the merged MR's ticket **blocks**. Find them with one JQL: `issue in linkedIssues("<ticket>", "blocks") AND labels = release AND statusCategory = "To Do"`. For each:
 1. Move it to In Progress (`21`).
@@ -253,4 +258,4 @@ Every run that got past the gate, quiet ones included, writes one heartbeat. Sen
 
 ## On a timer
 
-`/muster` runs it every half hour in working hours. `/loop 30m /drover` does the same by hand in a session left open, like Mr. Sweep. A run only acts on what changed: claims stop overlapping runs working the same MR, and the asked-at-this-head record stops a reviewer being pinged twice for the same push.
+`/muster` runs it every 15 minutes in working hours. `/loop 30m /drover` does the same by hand in a session left open, like Mr. Sweep. A run only acts on what changed: claims stop overlapping runs working the same MR, and the asked-at-this-head record stops a reviewer being pinged twice for the same push.

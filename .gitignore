@@ -12,3 +12,11 @@ plan.md
 
 # C2 collects live state into here; none of it belongs in git.
 c2/state/
+
+# The Sweep family's notes on people (tone lines, Slack ids, who's junior)
+# stay on this machine: this repo is public.
+skills/dr-sweep/patients.md
+skills/sergeant-sweep/suspects.md
+skills/prof-sweep/class-list.md
+skills/granny-sweep/grandchildren.md
+skills/sweep/juniors.md
