@@ -95,9 +95,11 @@ glab api -X PUT "projects/<url-encoded project>/merge_requests/<iid>/merge" -f s
 ```
 
 **Then move its ticket in the same step.**
-1. Read the ticket's status. If it's already where the MR's `on_merge` says (`QA` or `Done`), leave it and say so.
-2. Otherwise call `getTransitionsForJiraIssue` and pick the transition whose `to.name` is `on_merge`. In COS today, QA is `111` and Done is `31`. Run `transitionJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`).
+1. Read the ticket's status. If it's already where the MR's `on_merge` says (`QA`, `Done` or `In Progress`), leave it and say so.
+2. Otherwise call `getTransitionsForJiraIssue` and pick the transition whose `to.name` is `on_merge`. In COS today, QA is `111`, Done is `31` and In Progress is `21`. Run `transitionJiraIssue` (cloudId `28feb242-73cf-475d-8304-4c5b3fd27dcc`).
 3. If the MR has no `on_merge` line, don't guess: report it under Needs you.
+
+**`In Progress` means the MR is one part of its ticket.** `/raise-mr` writes it when the diff doesn't cover every acceptance criterion. The ticket stays open, and the MR's description says what it covers and what it leaves. On merge, don't move the ticket to QA and don't write a test plan, because a plan on an unfinished ticket only lists the work left as ❌. Instead, add one comment to the ticket: `<repo>!<iid> merged (<merge commit, short>): covers <…>; still to do: <…>`, taken from the description. The test plan comes when the MR that finishes the ticket merges with `On merge: … to QA`.
 
 **Then write its test plan.** If the ticket is on the RBAC/GBAC epic (parent `COS-3789` or label `rbac-gbac`), start a background agent that follows `~/.claude/skills/test-plan/SKILL.md` with `<ticket> --post`. It runs the MR's tests on main, posts the "QA by tests" plan on the ticket and adds `needs-native-tests`. Put its comment link in the MR's row `note` when it reports, and any ❌ or ⚠️ on a core behaviour under Needs you. Skip it with `--dry-run`.
 

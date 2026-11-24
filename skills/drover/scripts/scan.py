@@ -16,7 +16,8 @@ across GitLab. Each row carries a `state`:
   parked          its ticket is in parked.txt
 
 `ask` lists the reviewers of a waiting_review MR not yet asked at this head (state.py).
-`on_merge` is "QA" or "Done" from the description's "On merge" line, or null.
+`on_merge` is "QA", "Done" or "In Progress" from the description's "On merge" line, or null.
+"In Progress" means the MR covers only part of its ticket, so the ticket stays open.
 """
 import json, re, subprocess, sys, time
 from pathlib import Path
@@ -41,7 +42,9 @@ STILL_OPEN = re.compile(r"\b(required|consider|nit|major|minor|question|blocking
 # The label a reviewer opens a note with: **NIT**, **Required:**, **Consider:** and so on.
 LABEL = re.compile(r"^\s*\*\*\s*(nit|nitpick|required|consider|minor|major|question|fyi|blocking)\b", re.I)
 KEY = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
-ON_MERGE = re.compile(r"On merge:\*\*.*?to \*\*(QA|Done)\*\*", re.I)
+# Bold or plain, e.g. "**On merge:** move <KEY> to **QA**", "On merge: move <KEY> to QA."
+# or, for an MR that covers only part of its ticket, "On merge: keep <KEY> In Progress".
+ON_MERGE = re.compile(r"On merge:?\**:?[^\n]*?\b(QA|Done|In Progress)\b", re.I)
 
 
 def api(path):
@@ -142,7 +145,7 @@ def row_for(mr, me, claims, main_cache, parked):
     row.update({
         "pipeline": pstatus, "pipeline_url": pipeline.get("web_url"),
         "merge_status": full.get("detailed_merge_status"), "conflicts": full.get("has_conflicts"),
-        "on_merge": {"qa": "QA", "done": "Done"}[m.group(1).lower()] if m else None,
+        "on_merge": {"qa": "QA", "done": "Done", "in progress": "In Progress"}[m.group(1).lower()] if m else None,
         "stacked_on": full["target_branch"] if full["target_branch"] not in ("main", "master") else None,
     })
     if pstatus in RUNNING:
